@@ -249,6 +249,12 @@ class VlessParser {
         return VpnTransport.http2;
       case 'quic':
         return VpnTransport.quic;
+      case 'xhttp':
+        return VpnTransport.xhttp;
+      case 'httpupgrade':
+        return VpnTransport.httpupgrade;
+      case 'splithttp':
+        return VpnTransport.splithttp;
       default:
         return VpnTransport.tcp;
     }
