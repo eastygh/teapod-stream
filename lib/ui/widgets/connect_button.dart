@@ -85,13 +85,16 @@ class _ConnectButtonState extends State<ConnectButton>
           child: Stack(
             alignment: Alignment.center,
             children: [
-              // Outer glow ring
-              Container(
-                width: 200 * _pulseAnim.value,
-                height: 200 * _pulseAnim.value,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _outerColor,
+              // Outer glow ring (animated via Transform.scale to avoid layout shifts)
+              Transform.scale(
+                scale: _pulseAnim.value,
+                child: Container(
+                  width: 200,
+                  height: 200,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _outerColor,
+                  ),
                 ),
               ),
               // Middle ring
