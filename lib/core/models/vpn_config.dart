@@ -4,7 +4,7 @@ enum VpnProtocol { vless, vmess, trojan, shadowsocks }
 
 enum VpnSecurity { none, tls, reality }
 
-enum VpnTransport { tcp, ws, grpc, http2, quic }
+enum VpnTransport { tcp, ws, grpc, http2, quic, xhttp, httpupgrade, splithttp }
 
 class VpnConfig {
   final String id;

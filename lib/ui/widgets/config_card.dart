@@ -44,6 +44,9 @@ class ConfigCard extends StatelessWidget {
         VpnTransport.http2 => 'H2',
         VpnTransport.quic => 'QUIC',
         VpnTransport.tcp => 'TCP',
+        VpnTransport.xhttp => 'XHTTP',
+        VpnTransport.httpupgrade => 'HTTPUpgrade',
+        VpnTransport.splithttp => 'SplitHTTP',
       };
 
   @override

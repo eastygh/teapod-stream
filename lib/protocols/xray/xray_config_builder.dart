@@ -178,6 +178,24 @@ class XrayConfigBuilder {
         'grpcSettings': {
           'serviceName': config.grpcServiceName ?? '',
         },
+      if (config.transport == VpnTransport.xhttp)
+        'xhttpSettings': {
+          'path': config.wsPath ?? '/',
+          if (config.wsHost != null && config.wsHost!.isNotEmpty)
+            'host': config.wsHost,
+        },
+      if (config.transport == VpnTransport.splithttp)
+        'splithttpSettings': {
+          'path': config.wsPath ?? '/',
+          if (config.wsHost != null && config.wsHost!.isNotEmpty)
+            'host': config.wsHost,
+        },
+      if (config.transport == VpnTransport.httpupgrade)
+        'httpupgradeSettings': {
+          'path': config.wsPath ?? '/',
+          if (config.wsHost != null && config.wsHost!.isNotEmpty)
+            'host': config.wsHost,
+        },
     };
   }
 
