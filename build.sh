@@ -235,6 +235,43 @@ rename_apks() {
   fi
 }
 
+push_release() {
+  local is_pre=${1:-false}
+  local dir="build/app/outputs/flutter-apk"
+  local tag="v$VERSION"
+
+  # Find APK files
+  local apks=("$dir"/teapod-stream-*-release-"$VERSION".apk)
+  if [[ ! -f "${apks[0]}" ]]; then
+    err "APK не найдены! Сначала выполните: ./build.sh release"
+  fi
+
+  # Check if gh is installed
+  if ! command -v gh &>/dev/null; then
+    err "gh CLI не найден! Установите: brew install gh && gh auth login"
+  fi
+
+  # Check if authenticated
+  if ! gh auth status &>/dev/null; then
+    err "Не авторизован в gh! Выполните: gh auth login"
+  fi
+
+  log "Публикация релиза $tag ($VERSION)..."
+
+  # Check if tag already exists
+  if gh release view "$tag" &>/dev/null; then
+    warn "Релиз $tag уже существует, обновляю..."
+    gh release upload "$tag" "${apks[@]}" --clobber
+  else
+    local flags=("--title" "TeapodStream $VERSION" "--generate-notes")
+    [[ "$is_pre" == "true" ]] && flags+=("--prerelease")
+    gh release create "$tag" "${flags[@]}" "${apks[@]}"
+  fi
+
+  ok "Релиз $tag опубликован!"
+  gh release view "$tag" --json url --jq '.url'
+}
+
 case "${1:-help}" in
 
   debug)
@@ -302,40 +339,11 @@ case "${1:-help}" in
     ;;
 
   push)
-    dir="build/app/outputs/flutter-apk"
-    tag="v$VERSION"
+    push_release false
+    ;;
 
-    # Find APK files
-    apks=("$dir"/teapod-stream-*-release-"$VERSION".apk)
-    if [[ ! -f "${apks[0]}" ]]; then
-      err "APK не найдены! Сначала выполните: ./build.sh release"
-    fi
-
-    # Check if gh is installed
-    if ! command -v gh &>/dev/null; then
-      err "gh CLI не найден! Установите: brew install gh && gh auth login"
-    fi
-
-    # Check if authenticated
-    if ! gh auth status &>/dev/null; then
-      err "Не авторизован в gh! Выполните: gh auth login"
-    fi
-
-    log "Создаю релиз $tag ($VERSION)..."
-
-    # Check if tag already exists
-    if gh release view "$tag" &>/dev/null; then
-      warn "Релиз $tag уже существует, обновляю..."
-      gh release upload "$tag" "${apks[@]}" --clobber
-    else
-      gh release create "$tag" \
-        --title "TeapodStream $VERSION" \
-        --generate-notes \
-        "${apks[@]}"
-    fi
-
-    ok "Релиз $tag опубликован:"
-    gh release view "$tag" --json url --jq '.url'
+  pushpre)
+    push_release true
     ;;
 
   clean)
@@ -355,7 +363,8 @@ case "${1:-help}" in
     echo "    ./build.sh aab          Собрать AAB"
     echo "    ./build.sh run          Запустить debug на устройстве"
     echo "    ./build.sh run-release  Запустить release на устройстве"
-    echo "    ./build.sh push          Опубликовать релиз на GitHub"
+    echo "    ./build.sh pushpre      Опубликовать Pre-release на GitHub"
+    echo "    ./build.sh push         Опубликовать Release на GitHub"
     echo "    ./build.sh clean        Очистить артефакты"
     echo ""
     ;;
