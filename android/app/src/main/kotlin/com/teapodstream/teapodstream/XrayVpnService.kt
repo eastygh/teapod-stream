@@ -486,38 +486,62 @@ class XrayVpnService : VpnService() {
     }
 
     private fun stopVpn() {
+        if (!isRunning) return  // idempotent — safe to call multiple times
         isRunning = false
         lastUnderlyingNetwork = null
-        unregisterNetworkCallback()
-        statsThread?.interrupt()
 
-        prefixProxy?.stop()
-        prefixProxy = null
-
-        // Stop teapod-tun2socks
         try {
-            teapodVpnManager?.stop()
-        } catch (e: Exception) {
-            log("warning", "Error stopping teapod-tun2socks: ${e.message}")
+            try { unregisterNetworkCallback() } catch (e: Exception) {
+                log("warning", "unregisterNetworkCallback failed: ${e.message}")
+            }
+
+            statsThread?.let {
+                try { it.interrupt() } catch (e: Exception) {
+                    log("warning", "statsThread.interrupt failed: ${e.message}")
+                }
+            }
+            statsThread = null
+
+            try { prefixProxy?.stop() } catch (e: Exception) {
+                log("warning", "prefixProxy.stop failed: ${e.message}")
+            }
+            prefixProxy = null
+
+            try { teapodVpnManager?.stop() } catch (e: Exception) {
+                log("warning", "teapodVpnManager.stop failed: ${e.message}")
+            }
+            teapodVpnManager = null
+
+            try {
+                if (xrayPid > 0) {
+                    nativeKillProcess(xrayPid)
+                    xrayPid = -1L
+                }
+                xrayProcess?.destroy()
+            } catch (e: Exception) {
+                log("warning", "xray process kill failed: ${e.message}")
+            }
+            xrayProcess = null
+
+            try {
+                tunInterface?.close()
+            } catch (e: Exception) {
+                log("warning", "tunInterface.close failed: ${e.message}")
+            }
+            tunInterface = null
+        } finally {
+            // Always send disconnected — even if cleanup partially failed
+            currentNativeState = "disconnected"
+            VpnEventStreamHandler.sendStateEvent("disconnected")
         }
-        teapodVpnManager = null
-        
-        if (xrayPid > 0) {
-            nativeKillProcess(xrayPid)
-            xrayPid = -1L
-        }
-        xrayProcess?.destroy()
-        tunInterface?.close()
-        tunInterface = null
-        currentNativeState = "disconnected"
-        VpnEventStreamHandler.sendStateEvent("disconnected")
+    }
+
+    override fun onDestroy() {
+        stopVpn()
+        super.onDestroy()
     }
 
     private fun startStatsMonitoring() {
-        // Capture baseline TrafficStats at connection time
-        baseUpload = TrafficStats.getUidTxBytes(applicationInfo.uid).coerceAtLeast(0)
-        baseDownload = TrafficStats.getUidRxBytes(applicationInfo.uid).coerceAtLeast(0)
-
         var lastUp = 0L
         var lastDown = 0L
         var lastTime = System.currentTimeMillis()
@@ -534,11 +558,9 @@ class XrayVpnService : VpnService() {
                     val now = System.currentTimeMillis()
                     val elapsed = (now - lastTime) / 1000.0
 
-                    // Get current TrafficStats and subtract baseline
-                    val rawTx = TrafficStats.getUidTxBytes(applicationInfo.uid).coerceAtLeast(0)
-                    val rawRx = TrafficStats.getUidRxBytes(applicationInfo.uid).coerceAtLeast(0)
-                    val currentTx = (rawTx - baseUpload).coerceAtLeast(0)
-                    val currentRx = (rawRx - baseDownload).coerceAtLeast(0)
+                    // Get perfectly accurate bytes directly from teapod-tun2socks!
+                    val currentTx = teapodVpnManager?.getUploadBytes() ?: 0L
+                    val currentRx = teapodVpnManager?.getDownloadBytes() ?: 0L
 
                     totalUpload = currentTx
                     totalDownload = currentRx
