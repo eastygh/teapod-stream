@@ -320,7 +320,8 @@ case "${1:-help}" in
       [[ "$plat" == "android-x64" ]] && abi="x86_64"
 
       log "Сборка архитектуры: $abi ($plat)..."
-      flutter build apk --release --target-platform "$plat" --no-pub
+      flutter build apk --release --target-platform "$plat" --no-pub \
+        --obfuscate --split-debug-info=build/app/outputs/symbols
 
       if [[ -f "$dir/app-release.apk" ]]; then
         mv "$dir/app-release.apk" "$dir/app-$abi-release.apk"
