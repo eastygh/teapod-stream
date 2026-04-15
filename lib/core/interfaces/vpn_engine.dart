@@ -18,6 +18,8 @@ abstract class VpnEngine {
 class VpnEngineOptions {
   final int socksPort;
   final int httpPort;
+  final int apiPort;
+  final String apiSecret;
   final String socksUser;
   final String socksPassword;
   final Set<String> excludedPackages;
@@ -33,6 +35,8 @@ class VpnEngineOptions {
   const VpnEngineOptions({
     required this.socksPort,
     required this.httpPort,
+    required this.apiPort,
+    required this.apiSecret,
     required this.socksUser,
     required this.socksPassword,
     this.excludedPackages = const {},
