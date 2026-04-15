@@ -85,16 +85,16 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "isBinaryReady" -> {
-                        val xray = java.io.File(applicationInfo.nativeLibraryDir, "libxray.so")
                         val geoip = java.io.File(filesDir, "geoip.dat")
                         val geosite = java.io.File(filesDir, "geosite.dat")
-                        
+
                         // If geodata is missing, try to extract it now (it's fast)
                         if (!geoip.exists() || !geosite.exists()) {
                             XrayVpnService.prepareBinaries(this)
                         }
-                        
-                        result.success(xray.exists() && geoip.exists() && geosite.exists())
+
+                        // teapod-core is an AAR library — no separate binary needed
+                        result.success(geoip.exists() && geosite.exists())
                     }
 
                     "prepareBinaries" -> {
@@ -258,18 +258,8 @@ class MainActivity : FlutterActivity() {
     private fun getBinaryVersions(): Map<String, String> {
         val versions = mutableMapOf<String, String>()
         try {
-            val libDir = applicationInfo.nativeLibraryDir
-
-            // Xray version
-            val xrayBin = "$libDir/libxray.so"
-            val xrayProc = ProcessBuilder(xrayBin, "-version").start()
-            val xrayOut = xrayProc.inputStream.bufferedReader().readText().trim()
-            versions["xray"] = xrayOut.lines().firstOrNull()?.split(" ")?.getOrNull(1) ?: "Unknown"
-            xrayProc.waitFor()
-
-            // Teapod-tun2socks version (from AAR package)
-            // Version is embedded in the AAR, we can get it from the package
-            versions["tun2socks"] = "teapod-tun2socks (AAR)"
+            versions["xray"] = teapodcore.Teapodcore.getXrayVersion()
+            versions["tun2socks"] = "teapod-core (AAR)"
         } catch (e: Exception) {
             versions["xray"] = "Error"
             versions["tun2socks"] = "Error"

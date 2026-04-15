@@ -37,7 +37,8 @@ android {
         val targetPlatform = project.findProperty("target-platform") as String?
         val targetAbi = when (targetPlatform) {
             "android-arm64" -> "arm64-v8a"
-            "android-x64" -> "x86_64"
+            "android-arm"   -> "armeabi-v7a"
+            "android-x64"   -> "x86_64"
             else -> "arm64-v8a"
         }
         ndk {
@@ -49,10 +50,10 @@ android {
     packaging {
         jniLibs {
             val targetPlatform = project.findProperty("target-platform") as String?
-            // Default to arm64-v8a when no platform is specified
             val targetAbi = when (targetPlatform) {
                 "android-arm64" -> "arm64-v8a"
-                "android-x64" -> "x86_64"
+                "android-arm"   -> "armeabi-v7a"
+                "android-x64"   -> "x86_64"
                 else -> "arm64-v8a"
             }
             listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64").forEach { abi ->
@@ -85,16 +86,17 @@ dependencies {
     val targetPlatform = project.findProperty("target-platform") as String?
     val abi = when (targetPlatform) {
         "android-arm64" -> "arm64-v8a"
-        "android-x64" -> "x86_64"
+        "android-arm"   -> "armeabi-v7a"
+        "android-x64"   -> "x86_64"
         else -> null
     }
 
     if (abi != null) {
-        implementation(files("libs/teapod-tun2socks-$abi.aar"))
+        implementation(files("libs/teapod-core-$abi.aar"))
     } else {
         // No target platform specified — default to arm64-v8a to avoid duplicate-class
         // errors that occur when both AARs are on the classpath simultaneously.
-        implementation(files("libs/teapod-tun2socks-arm64-v8a.aar"))
+        implementation(files("libs/teapod-core-arm64-v8a.aar"))
     }
 }
 

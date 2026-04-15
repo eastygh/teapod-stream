@@ -8,7 +8,7 @@ set -euo pipefail
 #    ./build.sh release      — release APK (split per ABI)
 #    ./build.sh aab          — release AAB (Google Play)
 #    ./build.sh run          — запуск на подключённом устройстве
-#    ./build.sh binaries     — скачать xray + geodata
+#    ./build.sh binaries     — скопировать teapod-core + скачать geodata
 #    ./build.sh clean        — очистить build артефакты
 # ─────────────────────────────────────────
 
@@ -17,10 +17,9 @@ cd "$SCRIPT_DIR"
 
 JNILIBS_DIR="android/app/src/main/jniLibs"
 LIBS_DIR="android/app/libs"
-ALL_ABIS=("arm64-v8a" "x86_64")
+ALL_ABIS=("arm64-v8a" "armeabi-v7a" "x86_64")
 DEFAULT_ABI="arm64-v8a"
-TUN2SOCKS_REPO="Wendor/teapod-tun2socks"
-LOCAL_TUN2SOCKS_DIR="../teapod-tun2socks/output"
+LOCAL_TEAPOD_CORE_DIR="../teapod-core/outputs"
 NDK_VERSION="28.2.13676358"
 
 # ─── Version from pubspec.yaml (format: "1.0.0+5002") ───
@@ -80,14 +79,8 @@ check_binaries() {
   fi
 
   for abi in "${abis_to_check[@]}"; do
-    if [[ ! -f "$JNILIBS_DIR/$abi/libxray.so" ]]; then
-      if [[ "$abi" == "$DEFAULT_ABI" ]]; then
-        warn "Отсутствует критический файл: $JNILIBS_DIR/$abi/libxray.so"
-        missing=1
-      fi
-    fi
-    if [[ ! -f "$LIBS_DIR/teapod-tun2socks-$abi.aar" ]]; then
-      warn "Отсутствует: $LIBS_DIR/teapod-tun2socks-$abi.aar"
+    if [[ ! -f "$LIBS_DIR/teapod-core-$abi.aar" ]]; then
+      warn "Отсутствует: $LIBS_DIR/teapod-core-$abi.aar"
       missing=1
     fi
   done
@@ -127,98 +120,29 @@ strip_binary() {
   fi
 }
 
-download_abi_binaries() {
-  local abi=$1
-  log "Скачиваем бинарники для ABI: $abi"
-  mkdir -p "$JNILIBS_DIR/$abi"
-
-  local xray_abi=$abi
-  [[ "$abi" == "x86_64" ]] && xray_abi="amd64"
-
-  log "Скачиваем xray-core ($abi)..."
-  local TMP_XRAY=$(mktemp -d)
-  if curl -L --progress-bar "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-android-$xray_abi.zip" -o "$TMP_XRAY/xray.zip" 2>/dev/null; then
-    unzip -o "$TMP_XRAY/xray.zip" xray -d "$TMP_XRAY/" 2>/dev/null || true
-    local found=$(find "$TMP_XRAY" -name "xray" -type f | head -1)
-    if [[ -n "$found" ]]; then
-      cp "$found" "$JNILIBS_DIR/$abi/libxray.so"
-      chmod +x "$JNILIBS_DIR/$abi/libxray.so"
-      strip_binary "$JNILIBS_DIR/$abi/libxray.so"
-      ok "xray → $JNILIBS_DIR/$abi/libxray.so"
-    fi
-  else
-    warn "Пропуск xray для $abi"
-  fi
-  
-  # Стриппинг других библиотек если они есть (например sing-box)
-  if [[ -f "$JNILIBS_DIR/$abi/libsing-box.so" ]]; then
-    strip_binary "$JNILIBS_DIR/$abi/libsing-box.so"
-  fi
-
-  rm -rf "$TMP_XRAY"
-}
-
-download_tun2socks_binaries() {
+copy_teapod_core_binaries() {
   mkdir -p "$LIBS_DIR"
-  log "Проверяем наличие teapod-tun2socks..."
-
-  local latest_info=""
+  log "Копируем teapod-core из $LOCAL_TEAPOD_CORE_DIR..."
 
   for abi in "${ALL_ABIS[@]}"; do
-    local found=0
-    # 1. Проверка локальной папки
-    if [[ -d "$LOCAL_TUN2SOCKS_DIR" ]]; then
-      local local_file=$(ls "$LOCAL_TUN2SOCKS_DIR"/teapod-tun2socks-"$abi"-*.aar 2>/dev/null | sort -V | tail -1)
-      if [[ -n "$local_file" ]]; then
-        cp "$local_file" "$LIBS_DIR/teapod-tun2socks-$abi.aar"
-        ok "Локальный AAR ($abi) скопирован из $(basename "$local_file")"
-        found=1
-      fi
-    fi
+    # Find the latest AAR for this ABI in the outputs dir
+    local local_file
+    local_file=$(ls "$LOCAL_TEAPOD_CORE_DIR"/teapod-core-"$abi"-*.aar 2>/dev/null | sort -V | tail -1)
 
-    # 2. Если не найдено локально, качаем с GitHub
-    if [[ $found -eq 0 ]]; then
-      # Получаем инфо о релизе один раз
-      if [[ -z "$latest_info" ]]; then
-        log "Запрос данных о последнем релизе $TUN2SOCKS_REPO..."
-        latest_info=$(curl -s "https://api.github.com/repos/$TUN2SOCKS_REPO/releases/latest")
-      fi
-
-      local tag=$(echo "$latest_info" | grep '"tag_name":' | cut -d'"' -f4)
-      local download_url=$(echo "$latest_info" | grep "browser_download_url" | grep "$abi" | cut -d'"' -f4 | head -1)
-
-      if [[ -n "$download_url" ]]; then
-        log "Скачиваем teapod-tun2socks ($abi) версия $tag..."
-        curl -L --progress-bar "$download_url" -o "$LIBS_DIR/teapod-tun2socks-$abi.aar"
-        # Для AAR стриппинг сложнее, но можно попробовать распаковать и почистить
-        # (На данный момент считаем что библиотека собрана верно)
-        ok "Скачан AAR ($abi) версия $tag"
-        found=1
-      else
-        warn "Не удалось найти ссылку для скачивания $abi в релизе $tag"
-      fi
-    fi
-
-    if [[ $found -eq 0 ]]; then
-      warn "Не удалось найти библиотеку teapod-tun2socks для $abi"
+    if [[ -n "$local_file" ]]; then
+      cp "$local_file" "$LIBS_DIR/teapod-core-$abi.aar"
+      ok "teapod-core AAR ($abi) скопирован из $(basename "$local_file")"
+    else
+      warn "Не найден teapod-core AAR для $abi в $LOCAL_TEAPOD_CORE_DIR"
+      warn "Соберите библиотеку: cd ../teapod-core && bash build.sh"
     fi
   done
 }
 
 download_binaries() {
-  log "Очистка управляемых бинарников..."
-  # Удаляем только libxray.so (его мы точно скачаем), остальные оставляем для стриппинга
-  find "$JNILIBS_DIR" -type f -name "libxray.so" -delete
-  
   local ASSETS_BIN="assets/binaries"
-  log "Очистка старых бинарников из ассетов..."
-  find "$ASSETS_BIN" -type f ! -name "*.dat" -delete
 
-  for abi in "${ALL_ABIS[@]}"; do
-    download_abi_binaries "$abi"
-  done
-
-  download_tun2socks_binaries
+  copy_teapod_core_binaries
 
   mkdir -p "$ASSETS_BIN"
   log "Скачиваем geoip.dat..."
@@ -235,12 +159,9 @@ download_binaries() {
 rename_apks() {
   local dir="build/app/outputs/flutter-apk"
 
-  # Remove broken armeabi-v7a (no xray binary for 32-bit ARM)
-  rm -f "$dir"/app-armeabi-v7a-release.apk*
-
   echo ""
   if ls "$dir"/app-arm64-v8a-release.apk 1>/dev/null 2>&1; then
-    for abi in arm64-v8a x86_64; do
+    for abi in arm64-v8a armeabi-v7a x86_64; do
       local src="$dir/app-$abi-release.apk"
       if [[ -f "$src" ]]; then
         local dst="$dir/teapod-stream-$abi-release-$VERSION.apk"
@@ -305,7 +226,7 @@ case "${1:-help}" in
     ;;
 
   release)
-    log "Сборка RELEASE APK (arm64 + x86_64)..."
+    log "Сборка RELEASE APK (arm64 + arm32 + x86_64)..."
     accept_sdk_licenses
     check_binaries true || true
     ensure_pub
@@ -315,9 +236,12 @@ case "${1:-help}" in
     dir="build/app/outputs/flutter-apk"
     rm -f "$dir"/app-*-release.apk
 
-    for plat in android-arm64 android-x64; do
-      abi="arm64-v8a"
-      [[ "$plat" == "android-x64" ]] && abi="x86_64"
+    for plat in android-arm64 android-arm android-x64; do
+      case "$plat" in
+        android-arm64) abi="arm64-v8a" ;;
+        android-arm)   abi="armeabi-v7a" ;;
+        android-x64)   abi="x86_64" ;;
+      esac
 
       log "Сборка архитектуры: $abi ($plat)..."
       flutter build apk --release --target-platform "$plat" --no-pub \
@@ -380,7 +304,7 @@ case "${1:-help}" in
     echo "  TeapodStream build script"
     echo ""
     echo "  Команды:"
-    echo "    ./build.sh binaries     Скачать xray, geodata"
+    echo "    ./build.sh binaries     Скопировать teapod-core AAR + скачать geodata"
     echo "    ./build.sh debug        Собрать debug APK"
     echo "    ./build.sh release      Собрать release APK (split per ABI)"
     echo "    ./build.sh aab          Собрать AAB"
