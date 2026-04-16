@@ -112,22 +112,30 @@ class XrayVpnService : VpnService() {
             ACTION_DISCONNECT -> {
                 // Signal disconnecting immediately so the button turns yellow
                 // even when triggered from the notification (no Flutter-side handler).
-                if (isRunning) {
-                    currentNativeState = "disconnecting"
-                    VpnEventStreamHandler.sendStateEvent("disconnecting")
-                }
+                currentNativeState = "disconnecting"
+                VpnEventStreamHandler.sendStateEvent("disconnecting")
+
                 // Run cleanup off the main thread — Go calls (stopTun2Socks/stopXray)
                 // can block if goroutines are stuck after long uptime or network changes.
                 Thread {
-                    stopVpn()
-                    // Guarantee "disconnected" is always sent — even if stopVpn() was
-                    // a no-op (isRunning was already false when the intent arrived).
+                    val stopThread = Thread { stopVpn() }
+                    stopThread.start()
+                    try {
+                        stopThread.join(5000) // safety timeout — wait max 5s for движок to stop
+                        if (stopThread.isAlive) {
+                            log("warning", "stopVpn timed out after 5s, forcing disconnected state")
+                        }
+                    } catch (e: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                    }
+
+                    // Guarantee "disconnected" is always sent
                     currentNativeState = "disconnected"
                     VpnEventStreamHandler.sendStateEvent("disconnected")
+                    // Update notification to "Disconnected" ONLY after we've actually
+                    // finished (or timed out) the stopping process.
+                    showDisconnectedNotification()
                 }.start()
-                // Keep the service alive as foreground with a "Connect" notification.
-                // This lets users reconnect from the shade without opening the app.
-                showDisconnectedNotification()
                 return START_STICKY
             }
             ACTION_CONNECT -> {
@@ -308,6 +316,7 @@ class XrayVpnService : VpnService() {
                     .addDnsServer(tunDns)
                     .allowFamily(OsConstants.AF_INET)
                     .setBlocking(true)
+                    .setMetered(false)
 
                 // On Android 8+, set underlying networks for better routing
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -634,11 +643,48 @@ class XrayVpnService : VpnService() {
 
     private fun updateUnderlyingNetworks(cm: ConnectivityManager) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val activeNetwork = cm.activeNetwork ?: return
-            if (activeNetwork == lastUnderlyingNetwork) return
-            lastUnderlyingNetwork = activeNetwork
-            setUnderlyingNetworks(arrayOf(activeNetwork))
-            log("info", "Underlying network updated: $activeNetwork")
+            val activeNetwork = cm.activeNetwork ?: run {
+                setUnderlyingNetworks(null)
+                lastUnderlyingNetwork = null
+                return
+            }
+
+            // In Android 10+, cm.activeNetwork returns the VPN network itself if active.
+            // We must set the REAL underlying network (WiFi/LTE) to avoid status bar glitches.
+            val caps = cm.getNetworkCapabilities(activeNetwork)
+            if (caps == null || caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VPN)) {
+                // Active is VPN or unknown — look for the best physical internet network
+                val allNetworks = try { cm.allNetworks } catch (e: Exception) { emptyArray<Network>() }
+                var physicalNetwork: Network? = null
+                for (nw in allNetworks) {
+                    val c = cm.getNetworkCapabilities(nw) ?: continue
+                    if (c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                        !c.hasCapability(NetworkCapabilities.NET_CAPABILITY_VPN)) {
+                        physicalNetwork = nw
+                        break
+                    }
+                }
+
+                if (physicalNetwork == null) {
+                    if (lastUnderlyingNetwork != null) {
+                        setUnderlyingNetworks(null)
+                        lastUnderlyingNetwork = null
+                        log("info", "All underlying networks lost")
+                    }
+                    return
+                }
+
+                if (physicalNetwork == lastUnderlyingNetwork) return
+                lastUnderlyingNetwork = physicalNetwork
+                setUnderlyingNetworks(arrayOf(physicalNetwork))
+                log("info", "Underlying network set to physical: $physicalNetwork")
+            } else {
+                // Active is already physical
+                if (activeNetwork == lastUnderlyingNetwork) return
+                lastUnderlyingNetwork = activeNetwork
+                setUnderlyingNetworks(arrayOf(activeNetwork))
+                log("info", "Underlying network updated: $activeNetwork")
+            }
         }
     }
 

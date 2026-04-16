@@ -121,6 +121,26 @@ class VpnNotifier extends Notifier<VpnState2> {
       _connectTimeout = null;
       _disconnectTimeout?.cancel();
       _disconnectTimeout = null;
+    } else if (nativeState == VpnState.connecting) {
+      if (_connectTimeout == null) {
+        _connectTimeout = Timer(const Duration(seconds: 30), () {
+          if (state.connectionState == VpnState.connecting) {
+            state = state.copyWith(
+                connectionState: VpnState.error, error: 'Connection timeout');
+            _connectTimeout = null;
+            _engine.disconnect().ignore();
+          }
+        });
+      }
+    } else if (nativeState == VpnState.disconnecting) {
+      if (_disconnectTimeout == null) {
+        _disconnectTimeout = Timer(const Duration(seconds: 10), () {
+          if (state.connectionState == VpnState.disconnecting) {
+            state = VpnState2(connectionState: VpnState.disconnected);
+            _disconnectTimeout = null;
+          }
+        });
+      }
     }
 
     if (state.connectionState == nativeState) return;
@@ -277,12 +297,7 @@ class VpnNotifier extends Notifier<VpnState2> {
   /// Syncs Flutter state from native when the app resumes from background.
   /// EventChannel replay on `onListen` handles most cases; this is a fallback.
   Future<void> syncNativeState() async {
-    // Skip only "connecting" — it has a 30s safety timeout and syncing could
-    // race with the native startup sequence.
-    // Allow "disconnecting" to sync: it could be a stale state left by a
-    // service restart (e.g. after OS killed the service overnight), and the
-    // user would be stuck with a disabled button otherwise.
-    if (state.connectionState == VpnState.connecting) return;
+    // We now handle timeouts inside _onNativeState, so it's safe to sync everything.
 
     try {
       const channel = MethodChannel(AppConstants.methodChannel);
