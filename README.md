@@ -73,7 +73,7 @@ VPN-клиент для Android с поддержкой протокола Xray 
 ### Зависимости
 
 Бинарные файлы загружаются автоматически при выполнении `./build.sh binaries`:
-- [Xray-core](https://github.com/XTLS/Xray-core)
+- [teapod-core](https://github.com/Wendor/teapod-core) (xray-core + teapod-tun2socks)
 - [geoip.dat](https://github.com/v2fly/geoip)
 - [geosite.dat](https://github.com/v2fly/domain-list-community)
 
