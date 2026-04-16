@@ -23,6 +23,7 @@ class ConfigCard extends StatelessWidget {
         VpnProtocol.vmess => AppColors.protoVmess,
         VpnProtocol.trojan => AppColors.protoTrojan,
         VpnProtocol.shadowsocks => AppColors.protoShadowsocks,
+        VpnProtocol.hysteria2 => AppColors.protoHysteria2,
       };
 
   String get _protocolLabel => switch (config.protocol) {
@@ -30,6 +31,7 @@ class ConfigCard extends StatelessWidget {
         VpnProtocol.vmess => 'VMess',
         VpnProtocol.trojan => 'Trojan',
         VpnProtocol.shadowsocks => 'SS',
+        VpnProtocol.hysteria2 => 'HY2',
       };
 
   String get _securityLabel => switch (config.security) {

@@ -42,4 +42,5 @@ class AppColors {
   static const protoVmess = Color(0xFFB47FFF);
   static const protoTrojan = Color(0xFFFF7F7F);
   static const protoShadowsocks = Color(0xFFFFB74D);
+  static const protoHysteria2 = Color(0xFF3DD6C8);
 }

@@ -8,6 +8,7 @@ class VlessParser {
     if (uri.startsWith('vmess://')) return _parseVmess(uri);
     if (uri.startsWith('trojan://')) return _parseTrojan(uri);
     if (uri.startsWith('ss://')) return _parseShadowsocks(uri);
+    if (uri.startsWith('hy2://') || uri.startsWith('hysteria2://')) return _parseHysteria2(uri);
     return null;
   }
 
@@ -234,6 +235,55 @@ class VlessParser {
         security: VpnSecurity.none,
         transport: VpnTransport.tcp,
         ssPrefix: ssPrefix,
+        createdAt: DateTime.now(),
+        rawUri: uri,
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // hy2://password@host:port?sni=...&obfs=salamander&obfs-password=...#name
+  // also handles hysteria2:// scheme
+  static VpnConfig? _parseHysteria2(String uri) {
+    try {
+      final scheme = uri.startsWith('hysteria2://') ? 'hysteria2://' : 'hy2://';
+      final withoutScheme = uri.substring(scheme.length);
+      final hashIdx = withoutScheme.indexOf('#');
+      final name = hashIdx >= 0
+          ? Uri.decodeComponent(withoutScheme.substring(hashIdx + 1))
+          : 'Hysteria2 Server';
+      final main =
+          hashIdx >= 0 ? withoutScheme.substring(0, hashIdx) : withoutScheme;
+
+      final atIdx = main.lastIndexOf('@');
+      if (atIdx < 0) return null;
+      final password = Uri.decodeComponent(main.substring(0, atIdx));
+      final hostPart = main.substring(atIdx + 1);
+
+      final qIdx = hostPart.indexOf('?');
+      final hostPort = qIdx >= 0 ? hostPart.substring(0, qIdx) : hostPart;
+      final queryStr = qIdx >= 0 ? hostPart.substring(qIdx + 1) : '';
+
+      final (host, port) = _parseHostPort(hostPort, 443);
+      final params = Uri.splitQueryString(queryStr);
+
+      final obfs = params['obfs'];
+      final obfsPassword =
+          obfs == 'salamander' ? params['obfs-password'] : null;
+
+      return VpnConfig(
+        id: const Uuid().v4(),
+        name: name.isEmpty ? '$host:$port' : name,
+        protocol: VpnProtocol.hysteria2,
+        address: host,
+        port: port,
+        uuid: '',
+        password: password,
+        security: VpnSecurity.tls,
+        transport: VpnTransport.tcp,
+        sni: params['sni'],
+        obfsPassword: obfsPassword,
         createdAt: DateTime.now(),
         rawUri: uri,
       );

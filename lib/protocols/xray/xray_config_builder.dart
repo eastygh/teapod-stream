@@ -126,6 +126,14 @@ class XrayConfigBuilder {
   }
 
   static Map<String, dynamic> _buildOutbound(VpnConfig config) {
+    if (config.protocol == VpnProtocol.hysteria2) {
+      return {
+        'tag': 'proxy',
+        'protocol': 'hysteria',
+        'settings': _buildOutboundSettings(config),
+        'streamSettings': _buildStreamSettings(config),
+      };
+    }
     return {
       'tag': 'proxy',
       'protocol': config.protocol.name,
@@ -181,6 +189,12 @@ class XrayConfigBuilder {
             }
           ]
         };
+      case VpnProtocol.hysteria2:
+        return {
+          'version': 2,
+          'address': config.address,
+          'port': config.port,
+        };
     }
   }
 
@@ -189,6 +203,20 @@ class XrayConfigBuilder {
       t == VpnTransport.http2 ? 'h2' : t.name;
 
   static Map<String, dynamic> _buildStreamSettings(VpnConfig config) {
+    if (config.protocol == VpnProtocol.hysteria2) {
+      return {
+        'network': 'hysteria',
+        'security': 'tls',
+        'tlsSettings': {
+          'serverName': config.sni ?? '',
+          'allowInsecure': false,
+        },
+        'hysteriaSettings': {
+          'version': 2,
+          'auth': config.password ?? '',
+        },
+      };
+    }
     return {
       'network': _networkName(config.transport),
       'security': config.security.name,

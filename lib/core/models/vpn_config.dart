@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-enum VpnProtocol { vless, vmess, trojan, shadowsocks }
+enum VpnProtocol { vless, vmess, trojan, shadowsocks, hysteria2 }
 
 enum VpnSecurity { none, tls, reality }
 
@@ -34,6 +34,7 @@ class VpnConfig {
   final int? latencyMs;
   final String? subscriptionId; // ID of the subscription this config came from
   final String? ssPrefix; // hex-encoded prefix bytes for Outline Shadowsocks (e.g. "160301...")
+  final String? obfsPassword; // for Hysteria2 salamander obfuscation
 
   const VpnConfig({
     required this.id,
@@ -63,6 +64,7 @@ class VpnConfig {
     this.latencyMs,
     this.subscriptionId,
     this.ssPrefix,
+    this.obfsPassword,
   });
 
   VpnConfig copyWith({
@@ -99,6 +101,7 @@ class VpnConfig {
       latencyMs: latencyMs ?? this.latencyMs,
       subscriptionId: subscriptionId ?? this.subscriptionId,
       ssPrefix: ssPrefix,
+      obfsPassword: obfsPassword,
     );
   }
 
@@ -130,6 +133,7 @@ class VpnConfig {
         'latencyMs': latencyMs,
         'subscriptionId': subscriptionId,
         'ssPrefix': ssPrefix,
+        'obfsPassword': obfsPassword,
       };
 
   factory VpnConfig.fromJson(Map<String, dynamic> json) => VpnConfig(
@@ -169,6 +173,7 @@ class VpnConfig {
         latencyMs: json['latencyMs'] as int?,
         subscriptionId: json['subscriptionId'] as String?,
         ssPrefix: json['ssPrefix'] as String?,
+        obfsPassword: json['obfsPassword'] as String?,
       );
 
   String toJsonString() => jsonEncode(toJson());
