@@ -347,7 +347,8 @@ class VpnNotifier extends Notifier<VpnState2> {
   Future<void> reconnectWithNewConfig() async {
     if (state.isConnected || state.isConnecting) {
       await disconnect();
-      for (int i = 0; i < 100; i++) {
+      // _disconnectTimeout is 10s; wait up to 12s so the forced-disconnect fires first.
+      for (int i = 0; i < 120; i++) {
         if (!state.isBusy && !state.isConnected) break;
         await Future<void>.delayed(const Duration(milliseconds: 100));
       }

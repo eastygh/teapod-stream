@@ -307,7 +307,7 @@ class XrayVpnService : VpnService() {
             val inbounds = org.json.JSONObject(configJson).getJSONArray("inbounds")
             for (i in 0 until inbounds.length()) {
                 val inbound = inbounds.getJSONObject(i)
-                if (inbound.optString("tag") == "socks") {
+                if (inbound.optString("tag") == "socks-in") {
                     val accounts = inbound.optJSONObject("settings")
                         ?.optJSONArray("accounts") ?: continue
                     if (accounts.length() > 0) {
@@ -727,6 +727,9 @@ class XrayVpnService : VpnService() {
     private fun registerNetworkCallback() {
         try {
             val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+            // Pre-seed lastUnderlyingNetwork before registering so the initial onAvailable
+            // callback sees prev == current and does NOT trigger a spurious reconnect.
+            updateUnderlyingNetworks(cm)
             networkCallback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
                     log("info", "Network available: $network")
