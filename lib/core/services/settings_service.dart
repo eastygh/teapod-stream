@@ -39,7 +39,7 @@ class AppSettings {
     this.logLevel = LogLevel.info,
     this.excludedPackages = const {},
     this.includedPackages = const {},
-    this.vpnMode = VpnMode.allExcept,
+    this.vpnMode = VpnMode.onlySelected,
     this.splitTunnelingEnabled = false,
     this.randomPort = true,
     this.autoConnect = false,
@@ -153,7 +153,7 @@ class SettingsService {
       includedPackages: included,
       vpnMode: VpnMode.values.firstWhere(
         (e) => e.name == prefs.getString(_vpnModeKey),
-        orElse: () => VpnMode.allExcept,
+        orElse: () => VpnMode.onlySelected,
       ),
       splitTunnelingEnabled: prefs.getBool(_splitTunnelingKey) ?? false,
       randomPort: prefs.getBool(_randomPortKey) ?? true,

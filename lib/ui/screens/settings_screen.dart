@@ -414,10 +414,12 @@ class _SettingsBodyState extends State<_SettingsBody> {
                 'Включить сплит-туннелирование',
                 style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
               ),
-              subtitle: const Text(
-                'Выберите приложения, трафик которых НЕ будет проходить через VPN',
+              subtitle: Text(
+                widget.settings.vpnMode == VpnMode.onlySelected
+                    ? 'Только выбранные приложения пойдут через VPN'
+                    : 'Выбранные приложения будут исключены из VPN',
                 style:
-                    TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                    const TextStyle(color: AppColors.textSecondary, fontSize: 12),
               ),
               value: widget.settings.splitTunnelingEnabled,
               onChanged: widget.isConnected

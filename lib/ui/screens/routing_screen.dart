@@ -5,6 +5,12 @@ import '../../providers/settings_provider.dart';
 import '../../providers/vpn_provider.dart';
 import '../theme/app_colors.dart';
 
+String _formatDomainLabel(String zone) {
+  if (zone == 'xn--p1ai') return '.рф';
+  // Full hostnames (2+ dots) are displayed as-is; zones get a leading dot
+  return zone.split('.').length > 2 ? zone : '.$zone';
+}
+
 class RoutingScreen extends ConsumerWidget {
   const RoutingScreen({super.key});
 
@@ -136,7 +142,7 @@ class _RoutingBody extends StatelessWidget {
                 context,
                 chips: routing.domainZones
                     .map((zone) => _Chip(
-                          label: '.${zone == 'xn--p1ai' ? 'рф' : zone}',
+                          label: _formatDomainLabel(zone),
                           onDelete: isConnected
                               ? null
                               : () => onUpdate(routing.copyWith(
@@ -394,6 +400,8 @@ class _RoutingBody extends StatelessWidget {
 
   Future<void> _showDomainPicker(BuildContext context) async {
     final selected = Set<String>.from(routing.domainZones);
+    final popularKeys = _popularDomains.map((e) => e.$1).toSet();
+    final customDomains = Set<String>.from(selected.difference(popularKeys));
     final customCtrl = TextEditingController();
 
     await showModalBottomSheet<void>(
@@ -404,77 +412,104 @@ class _RoutingBody extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => DraggableScrollableSheet(
-          initialChildSize: 0.7,
-          minChildSize: 0.5,
-          maxChildSize: 0.92,
-          expand: false,
-          builder: (_, scrollCtrl) => Column(
-            children: [
-              _sheetHandle(),
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text('Выберите домены',
-                    style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600)),
-              ),
-              Expanded(
-                child: ListView(
-                  controller: scrollCtrl,
-                  children: [
-                    for (final (zone, label) in _popularDomains)
-                      CheckboxListTile(
-                        title: Text(
-                          label,
-                          style: const TextStyle(
-                              color: AppColors.textPrimary, fontSize: 14),
+        builder: (ctx, setState) {
+          void addDomain() {
+            final zone = customCtrl.text
+                .toLowerCase()
+                .trim()
+                .replaceAll(RegExp(r'^\.+'), '');
+            if (zone.isNotEmpty && !selected.contains(zone)) {
+              setState(() {
+                selected.add(zone);
+                customDomains.add(zone);
+              });
+              customCtrl.clear();
+            }
+          }
+
+          return DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            minChildSize: 0.5,
+            maxChildSize: 0.92,
+            expand: false,
+            builder: (_, scrollCtrl) => Column(
+              children: [
+                _sheetHandle(),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Text('Выберите домены',
+                      style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600)),
+                ),
+                Expanded(
+                  child: ListView(
+                    controller: scrollCtrl,
+                    children: [
+                      for (final (zone, label) in _popularDomains)
+                        CheckboxListTile(
+                          title: Text(
+                            label,
+                            style: const TextStyle(
+                                color: AppColors.textPrimary, fontSize: 14),
+                          ),
+                          value: selected.contains(zone),
+                          onChanged: (v) => setState(() {
+                            if (v == true) selected.add(zone);
+                            else selected.remove(zone);
+                          }),
+                          checkColor: AppColors.surface,
+                          activeColor: AppColors.primary,
                         ),
-                        value: selected.contains(zone),
-                        onChanged: (v) => setState(() {
-                          if (v == true) selected.add(zone);
-                          else selected.remove(zone);
-                        }),
-                        checkColor: AppColors.surface,
-                        activeColor: AppColors.primary,
-                      ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                      child: TextField(
-                        controller: customCtrl,
-                        style: const TextStyle(color: AppColors.textPrimary),
-                        decoration: InputDecoration(
-                          labelText: 'Свой домен или зона (напр. example.com)',
-                          labelStyle: const TextStyle(
-                              color: AppColors.textSecondary),
-                          border: const OutlineInputBorder(),
-                          suffixIcon: IconButton(
-                            icon: const Icon(Icons.add,
-                                color: AppColors.primary),
-                            onPressed: () {
-                              final zone = customCtrl.text
-                                  .toLowerCase()
-                                  .trim()
-                                  .replaceAll(RegExp(r'^\.+'), '');
-                              if (zone.isNotEmpty) {
-                                setState(() => selected.add(zone));
-                                customCtrl.clear();
-                              }
-                            },
+                      for (final zone in customDomains)
+                        CheckboxListTile(
+                          title: Text(
+                            _formatDomainLabel(zone),
+                            style: const TextStyle(
+                                color: AppColors.textPrimary, fontSize: 14),
+                          ),
+                          value: true,
+                          onChanged: (v) {
+                            if (v == false) {
+                              setState(() {
+                                selected.remove(zone);
+                                customDomains.remove(zone);
+                              });
+                            }
+                          },
+                          checkColor: AppColors.surface,
+                          activeColor: AppColors.primary,
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                        child: TextField(
+                          controller: customCtrl,
+                          style: const TextStyle(color: AppColors.textPrimary),
+                          onSubmitted: (_) => addDomain(),
+                          decoration: InputDecoration(
+                            labelText: 'Свой домен или зона (напр. example.com)',
+                            labelStyle: const TextStyle(
+                                color: AppColors.textSecondary),
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.add,
+                                  color: AppColors.primary),
+                              onPressed: addDomain,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              _doneButton(ctx, () {
-                onUpdate(routing.copyWith(domainZones: selected.toList()));
-              }),
-            ],
-          ),
-        ),
+                _doneButton(ctx, () {
+                  onUpdate(routing.copyWith(domainZones: selected.toList()));
+                }),
+              ],
+            ),
+          );
+        },
       ),
     );
     customCtrl.dispose();

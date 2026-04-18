@@ -45,7 +45,10 @@ class RoutingSettings {
     if (domainEnabled && domainZones.isNotEmpty) {
       parts.add(domainZones
               .take(2)
-              .map((z) => '.${z == 'xn--p1ai' ? 'рф' : z}')
+              .map((z) {
+                if (z == 'xn--p1ai') return '.рф';
+                return z.split('.').length > 2 ? z : '.$z';
+              })
               .join(', ') +
           (domainZones.length > 2 ? '…' : ''));
     }

@@ -9,7 +9,6 @@ import android.net.VpnService
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
-import android.util.Base64
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -124,6 +123,17 @@ class MainActivity : FlutterActivity() {
                         Thread {
                             val apps = getInstalledApps()
                             runOnUiThread { result.success(apps) }
+                        }.start()
+                    }
+
+                    "getAppIcon" -> {
+                        val packageName = call.argument<String>("packageName") ?: run {
+                            result.success(null)
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            val bytes = getAppIconBytes(packageName)
+                            runOnUiThread { result.success(bytes) }
                         }.start()
                     }
 
@@ -277,7 +287,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun getInstalledApps(): List<Map<String, String?>> {
+    private fun getInstalledApps(): List<Map<String, Any?>> {
         val pm = packageManager
         val packages = pm.getInstalledPackages(0)
         return packages
@@ -286,30 +296,35 @@ class MainActivity : FlutterActivity() {
                 try {
                     val appInfo = pkg.applicationInfo ?: return@mapNotNull null
                     val appName = pm.getApplicationLabel(appInfo).toString()
-                    val iconBase64 = drawableToBase64(appInfo.loadIcon(pm))
+                    val isSystem = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
                     mapOf(
                         "packageName" to pkg.packageName,
                         "appName" to appName,
-                        "icon" to iconBase64,
+                        "isSystem" to isSystem,
                     )
                 } catch (e: Exception) {
                     null
                 }
             }
-            .sortedBy { it["appName"] }
+            .sortedBy { it["appName"] as? String }
     }
 
-    private fun drawableToBase64(drawable: Drawable): String {
-        val size = (48 * resources.displayMetrics.density).toInt().coerceAtLeast(72)
-        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = android.graphics.Canvas(bitmap)
-        drawable.setBounds(0, 0, size, size)
-        drawable.draw(canvas)
-
-        val stream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 80, stream)
-        bitmap.recycle()
-        return Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
+    private fun getAppIconBytes(packageName: String): ByteArray? {
+        return try {
+            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+            val drawable = appInfo.loadIcon(packageManager)
+            val size = (48 * resources.displayMetrics.density).toInt().coerceAtLeast(72)
+            val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bitmap)
+            drawable.setBounds(0, 0, size, size)
+            drawable.draw(canvas)
+            val stream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.PNG, 80, stream)
+            bitmap.recycle()
+            stream.toByteArray()
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun getBinaryVersions(): Map<String, String> {
