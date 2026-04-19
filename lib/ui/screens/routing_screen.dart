@@ -166,7 +166,56 @@ class _RoutingBody extends StatelessWidget {
               ),
             ],
           ]),
+          const SizedBox(height: 12),
+          _card([
+            SwitchListTile(
+              title: const Text('По категории (Geosite)',
+                  style: TextStyle(color: AppColors.textPrimary, fontSize: 15)),
+              subtitle: const Text('Кураторские списки доменов из geosite.dat',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+              value: routing.geositeEnabled,
+              onChanged: isConnected
+                  ? null
+                  : (v) => onUpdate(routing.copyWith(geositeEnabled: v)),
+            ),
+            if (routing.geositeEnabled) ...[
+              _divider(),
+              _chipSection(
+                context,
+                chips: routing.geositeCodes
+                    .map((code) => _Chip(
+                          label: code,
+                          onDelete: isConnected
+                              ? null
+                              : () => onUpdate(routing.copyWith(
+                                    geositeCodes: routing.geositeCodes
+                                        .where((c) => c != code)
+                                        .toList(),
+                                  )),
+                        ))
+                    .toList(),
+                onAdd: isConnected
+                    ? null
+                    : () => _showGeositePicker(context),
+              ),
+            ],
+          ]),
         ],
+        const SizedBox(height: 20),
+        _label('ДОПОЛНИТЕЛЬНО'),
+        const SizedBox(height: 8),
+        _card([
+          SwitchListTile(
+            title: const Text('Блокировка рекламы',
+                style: TextStyle(color: AppColors.textPrimary, fontSize: 15)),
+            subtitle: const Text('geosite:category-ads-all → block',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+            value: routing.adBlockEnabled,
+            onChanged: isConnected
+                ? null
+                : (v) => onUpdate(routing.copyWith(adBlockEnabled: v)),
+          ),
+        ]),
         const SizedBox(height: 32),
       ],
     );
@@ -509,6 +558,145 @@ class _RoutingBody extends StatelessWidget {
                 ),
                 _doneButton(ctx, () {
                   onUpdate(routing.copyWith(domainZones: selected.toList()));
+                }),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+    customCtrl.dispose();
+  }
+
+  // ─── Geosite picker ──────────────────────────────────────────────────────
+
+  static const _popularGeosite = [
+    ('category-ru', 'Россия (категория)'),
+    ('cn', 'Китай'),
+    ('geolocation-!cn', 'Не-Китай'),
+    ('google', 'Google'),
+    ('youtube', 'YouTube'),
+    ('telegram', 'Telegram'),
+    ('twitter', 'Twitter / X'),
+    ('instagram', 'Instagram'),
+    ('facebook', 'Facebook'),
+    ('netflix', 'Netflix'),
+    ('disney', 'Disney+'),
+    ('amazon', 'Amazon / AWS'),
+    ('cloudflare', 'Cloudflare'),
+    ('github', 'GitHub'),
+    ('openai', 'OpenAI / ChatGPT'),
+    ('apple', 'Apple'),
+    ('microsoft', 'Microsoft'),
+    ('tiktok', 'TikTok'),
+    ('steam', 'Steam'),
+    ('category-games', 'Игры'),
+  ];
+
+  Future<void> _showGeositePicker(BuildContext context) async {
+    final selected = Set<String>.from(routing.geositeCodes);
+    final popularKeys = _popularGeosite.map((e) => e.$1).toSet();
+    final customCodes = Set<String>.from(selected.difference(popularKeys));
+    final customCtrl = TextEditingController();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) {
+          void addCode() {
+            final code = customCtrl.text.toLowerCase().trim();
+            if (code.isNotEmpty && !selected.contains(code)) {
+              setState(() {
+                selected.add(code);
+                customCodes.add(code);
+              });
+              customCtrl.clear();
+            }
+          }
+
+          return DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            minChildSize: 0.5,
+            maxChildSize: 0.92,
+            expand: false,
+            builder: (_, scrollCtrl) => Column(
+              children: [
+                _sheetHandle(),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Text('Выберите категории',
+                      style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600)),
+                ),
+                Expanded(
+                  child: ListView(
+                    controller: scrollCtrl,
+                    children: [
+                      for (final (code, name) in _popularGeosite)
+                        CheckboxListTile(
+                          title: Text(
+                            '$name  ($code)',
+                            style: const TextStyle(
+                                color: AppColors.textPrimary, fontSize: 14),
+                          ),
+                          value: selected.contains(code),
+                          onChanged: (v) => setState(() {
+                            if (v == true) { selected.add(code); }
+                            else { selected.remove(code); }
+                          }),
+                          checkColor: AppColors.surface,
+                          activeColor: AppColors.primary,
+                        ),
+                      for (final code in customCodes)
+                        CheckboxListTile(
+                          title: Text(
+                            code,
+                            style: const TextStyle(
+                                color: AppColors.textPrimary, fontSize: 14),
+                          ),
+                          value: true,
+                          onChanged: (v) {
+                            if (v == false) {
+                              setState(() {
+                                selected.remove(code);
+                                customCodes.remove(code);
+                              });
+                            }
+                          },
+                          checkColor: AppColors.surface,
+                          activeColor: AppColors.primary,
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                        child: TextField(
+                          controller: customCtrl,
+                          style: const TextStyle(color: AppColors.textPrimary),
+                          onSubmitted: (_) => addCode(),
+                          decoration: InputDecoration(
+                            labelText: 'Своя категория (напр. geolocation-!cn)',
+                            labelStyle: const TextStyle(
+                                color: AppColors.textSecondary),
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.add,
+                                  color: AppColors.primary),
+                              onPressed: addCode,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _doneButton(ctx, () {
+                  onUpdate(routing.copyWith(geositeCodes: selected.toList()));
                 }),
               ],
             ),

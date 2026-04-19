@@ -32,9 +32,11 @@ class XrayConfigBuilder {
             // routeOnly: true preserves sniffed domain/IP for routing — without it xray
             // re-resolves the domain via DNS before applying rules, which adds latency and
             // may fail for CDN domains or when DNS is unreliable during network transitions.
-            'routeOnly': routing.isActive && (
+            'routeOnly': (routing.isActive || routing.adBlockEnabled) && (
               (routing.geoEnabled && routing.geoCodes.isNotEmpty) ||
-              (routing.domainEnabled && routing.domainZones.isNotEmpty)
+              (routing.domainEnabled && routing.domainZones.isNotEmpty) ||
+              (routing.geositeEnabled && routing.geositeCodes.isNotEmpty) ||
+              routing.adBlockEnabled
             ),
           },
         },
@@ -105,7 +107,17 @@ class XrayConfigBuilder {
       rules.add({'type': 'field', 'ip': ['geoip:private'], 'outboundTag': 'direct'});
     }
 
-    if (!routing.geoEnabled && !routing.domainEnabled) return rules;
+    if (routing.adBlockEnabled) {
+      rules.add({
+        'type': 'field',
+        'domain': ['geosite:category-ads-all'],
+        'outboundTag': 'block',
+      });
+    }
+
+    if (!routing.isActive) return rules;
+
+    if (!routing.geoEnabled && !routing.domainEnabled && !routing.geositeEnabled) return rules;
 
     final selectedOut =
         routing.direction == RoutingDirection.bypass ? 'direct' : 'proxy';
@@ -114,6 +126,14 @@ class XrayConfigBuilder {
       rules.add({
         'type': 'field',
         'domain': routing.domainZones.map((z) => 'domain:$z').toList(),
+        'outboundTag': selectedOut,
+      });
+    }
+
+    if (routing.geositeEnabled && routing.geositeCodes.isNotEmpty) {
+      rules.add({
+        'type': 'field',
+        'domain': routing.geositeCodes.map((c) => 'geosite:$c').toList(),
         'outboundTag': selectedOut,
       });
     }

@@ -7,6 +7,9 @@ class RoutingSettings {
   final List<String> geoCodes;
   final bool domainEnabled;
   final List<String> domainZones;
+  final bool geositeEnabled;
+  final List<String> geositeCodes;
+  final bool adBlockEnabled;
 
   const RoutingSettings({
     this.direction = RoutingDirection.global,
@@ -15,6 +18,9 @@ class RoutingSettings {
     this.geoCodes = const [],
     this.domainEnabled = false,
     this.domainZones = const [],
+    this.geositeEnabled = false,
+    this.geositeCodes = const [],
+    this.adBlockEnabled = false,
   });
 
   bool get isActive => direction != RoutingDirection.global;
@@ -26,6 +32,9 @@ class RoutingSettings {
     List<String>? geoCodes,
     bool? domainEnabled,
     List<String>? domainZones,
+    bool? geositeEnabled,
+    List<String>? geositeCodes,
+    bool? adBlockEnabled,
   }) =>
       RoutingSettings(
         direction: direction ?? this.direction,
@@ -34,10 +43,13 @@ class RoutingSettings {
         geoCodes: geoCodes ?? this.geoCodes,
         domainEnabled: domainEnabled ?? this.domainEnabled,
         domainZones: domainZones ?? this.domainZones,
+        geositeEnabled: geositeEnabled ?? this.geositeEnabled,
+        geositeCodes: geositeCodes ?? this.geositeCodes,
+        adBlockEnabled: adBlockEnabled ?? this.adBlockEnabled,
       );
 
   String get summary {
-    if (direction == RoutingDirection.global) return 'Глобальный';
+    if (direction == RoutingDirection.global && !adBlockEnabled) return 'Глобальный';
     final parts = <String>[];
     if (geoEnabled && geoCodes.isNotEmpty) {
       parts.add(geoCodes.take(2).join(', ') + (geoCodes.length > 2 ? '…' : ''));
@@ -52,7 +64,12 @@ class RoutingSettings {
               .join(', ') +
           (domainZones.length > 2 ? '…' : ''));
     }
+    if (geositeEnabled && geositeCodes.isNotEmpty) {
+      parts.add('geosite:${geositeCodes.length}');
+    }
     if (bypassLocal) parts.add('LAN');
+    if (adBlockEnabled) parts.add('Ads✗');
+    if (direction == RoutingDirection.global) return parts.join(', ');
     final prefix = direction == RoutingDirection.bypass ? 'Обход' : 'Только';
     return parts.isEmpty ? prefix : '$prefix: ${parts.join(', ')}';
   }

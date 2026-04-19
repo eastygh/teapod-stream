@@ -139,6 +139,9 @@ class SettingsService {
   static const _routingGeoCodesKey = 'routing_geo_codes';
   static const _routingDomainEnabledKey = 'routing_domain_enabled';
   static const _routingDomainZonesKey = 'routing_domain_zones';
+  static const _routingGeositeEnabledKey = 'routing_geosite_enabled';
+  static const _routingGeositeCodesKey = 'routing_geosite_codes';
+  static const _routingAdBlockEnabledKey = 'routing_adblock_enabled';
   static const _updateChannelKey = 'update_channel';
 
   final _secure = StorageSecureService();
@@ -197,6 +200,9 @@ class SettingsService {
       geoCodes: prefs.getStringList(_routingGeoCodesKey) ?? [],
       domainEnabled: prefs.getBool(_routingDomainEnabledKey) ?? false,
       domainZones: prefs.getStringList(_routingDomainZonesKey) ?? [],
+      geositeEnabled: prefs.getBool(_routingGeositeEnabledKey) ?? false,
+      geositeCodes: prefs.getStringList(_routingGeositeCodesKey) ?? [],
+      adBlockEnabled: prefs.getBool(_routingAdBlockEnabledKey) ?? false,
     );
   }
 
@@ -227,6 +233,9 @@ class SettingsService {
     await prefs.setStringList(_routingGeoCodesKey, settings.routing.geoCodes);
     await prefs.setBool(_routingDomainEnabledKey, settings.routing.domainEnabled);
     await prefs.setStringList(_routingDomainZonesKey, settings.routing.domainZones);
+    await prefs.setBool(_routingGeositeEnabledKey, settings.routing.geositeEnabled);
+    await prefs.setStringList(_routingGeositeCodesKey, settings.routing.geositeCodes);
+    await prefs.setBool(_routingAdBlockEnabledKey, settings.routing.adBlockEnabled);
     await prefs.setString(_updateChannelKey, settings.updateChannel.name);
     // SOCKS credentials go to encrypted storage
     await _secure.writeSocksCredentials(settings.socksUser, settings.socksPassword);
