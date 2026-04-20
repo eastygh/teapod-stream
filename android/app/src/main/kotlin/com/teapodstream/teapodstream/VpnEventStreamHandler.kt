@@ -11,6 +11,8 @@ import io.flutter.plugin.common.EventChannel
 object VpnEventStreamHandler : EventChannel.StreamHandler {
     private var eventSink: EventChannel.EventSink? = null
     private val handler = Handler(Looper.getMainLooper())
+    // Контекст приложения для обновления Quick Settings плитки
+    @Volatile var appContext: android.content.Context? = null
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
         eventSink = events
@@ -45,6 +47,13 @@ object VpnEventStreamHandler : EventChannel.StreamHandler {
 
     fun sendStateEvent(state: String) {
         sendEvent(mapOf("type" to "state", "value" to state))
+        // Обновляем плитку и уведомление при изменении состояния
+        appContext?.let { ctx ->
+            VpnTileService.updateTile(ctx)
+            if (state == "connecting" || state == "disconnecting") {
+                XrayVpnService.showIntermediateNotification(ctx, state == "connecting")
+            }
+        }
     }
 
     fun sendConnectedEvent(socksPort: Int, socksUser: String, socksPassword: String) {
@@ -55,6 +64,7 @@ object VpnEventStreamHandler : EventChannel.StreamHandler {
             "socksUser" to socksUser,
             "socksPassword" to socksPassword,
         ))
+        appContext?.let { VpnTileService.updateTile(it) }
     }
 
     fun sendLogEvent(level: String, message: String) {
@@ -77,4 +87,5 @@ object VpnEventStreamHandler : EventChannel.StreamHandler {
             )
         )
     }
-}
+
+    }
