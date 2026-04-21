@@ -392,6 +392,23 @@ class XrayVpnService : VpnService() {
         VpnEventStreamHandler.sendStateEvent("connecting")
         log("info", "Starting VPN")
 
+        // Workaround: flush stale uid-based ip rules from previous install/uninstall.
+        // Try multiple methods to force netd to reset.
+        try {
+            // Method 1: Try to set empty VPN — clears old profile
+            val empty = Builder()
+                .addAddress("10.255.255.1", 32)
+                .addRoute("0.0.0.0", 0)
+                .setBlocking(false)
+                .establish()
+            if (empty != null) {
+                empty.close()
+                log("info", "VPN profile cleared")
+            }
+        } catch (e: Exception) {
+            log("warning", "Method 1 failed: ${e.message}")
+        }
+
         try {
             // Enable prefix proxy only when the ss:// URL contains ?prefix=.
             val finalConfig = if (ssPrefix != null) {
