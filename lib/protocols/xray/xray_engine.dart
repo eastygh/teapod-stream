@@ -96,6 +96,41 @@ class XrayEngine implements VpnEngine {
     return (state: VpnState.disconnected, socksPort: 0, socksUser: '', socksPassword: '');
   }
 
+  /// Get current stats (for background polling).
+  Future<({int upload, int download, int uploadSpeed, int downloadSpeed})>
+      getStats() async {
+    try {
+      final result =
+          await _channel.invokeMethod<Map<Object?, Object?>>('getStats');
+      if (result != null) {
+        return (
+          upload: (result['upload'] as num?)?.toInt() ?? 0,
+          download: (result['download'] as num?)?.toInt() ?? 0,
+          uploadSpeed: (result['uploadSpeed'] as num?)?.toInt() ?? 0,
+          downloadSpeed: (result['downloadSpeed'] as num?)?.toInt() ?? 0,
+        );
+      }
+    } catch (_) {}
+    return (upload: 0, download: 0, uploadSpeed: 0, downloadSpeed: 0);
+  }
+
+  /// Get stats history for chart.
+  Future<List<Map<String, int>>> getStatsHistory() async {
+    try {
+      final result = await _channel.invokeMethod<List<Object?>>('getStatsHistory');
+      if (result != null) {
+        return result
+            .whereType<Map<Object?, Object?>>()
+            .map((m) => {
+                  'uploadSpeed': (m['uploadSpeed'] as num?)?.toInt() ?? 0,
+                  'downloadSpeed': (m['downloadSpeed'] as num?)?.toInt() ?? 0,
+                })
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
   VpnState _parseState(String s) => switch (s) {
         'connecting' => VpnState.connecting,
         'connected' => VpnState.connected,

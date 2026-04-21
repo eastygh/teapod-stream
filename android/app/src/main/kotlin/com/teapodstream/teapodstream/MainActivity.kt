@@ -179,6 +179,16 @@ class MainActivity : FlutterActivity() {
                         ))
                     }
 
+                    "getStats" -> {
+                        val stats = XrayVpnService.getStats()
+                        result.success(stats)
+                    }
+
+                    "getStatsHistory" -> {
+                        val history = XrayVpnService.getStatsHistory()
+                        result.success(history)
+                    }
+
                     "installApk" -> {
                         val filePath = call.argument<String>("filePath") ?: run {
                             result.error("INVALID_ARGS", "filePath required", null)

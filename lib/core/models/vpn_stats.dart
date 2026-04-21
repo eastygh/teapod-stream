@@ -1,3 +1,20 @@
+class SpeedPoint {
+  final int uploadSpeed;
+  final int downloadSpeed;
+
+  const SpeedPoint({
+    this.uploadSpeed = 0,
+    this.downloadSpeed = 0,
+  });
+
+  factory SpeedPoint.fromMap(Map<String, dynamic> map) {
+    return SpeedPoint(
+      uploadSpeed: (map['uploadSpeed'] as num?)?.toInt() ?? 0,
+      downloadSpeed: (map['downloadSpeed'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 class VpnStats {
   final int uploadBytes;
   final int downloadBytes;
@@ -5,6 +22,7 @@ class VpnStats {
   final int downloadSpeedBps;
   final Duration connectedDuration;
   final String? connectedServer;
+  final List<SpeedPoint> speedHistory;
 
   const VpnStats({
     this.uploadBytes = 0,
@@ -13,6 +31,7 @@ class VpnStats {
     this.downloadSpeedBps = 0,
     this.connectedDuration = Duration.zero,
     this.connectedServer,
+    this.speedHistory = const [],
   });
 
   VpnStats copyWith({
@@ -22,6 +41,7 @@ class VpnStats {
     int? downloadSpeedBps,
     Duration? connectedDuration,
     String? connectedServer,
+    List<SpeedPoint>? speedHistory,
   }) {
     return VpnStats(
       uploadBytes: uploadBytes ?? this.uploadBytes,
@@ -30,6 +50,7 @@ class VpnStats {
       downloadSpeedBps: downloadSpeedBps ?? this.downloadSpeedBps,
       connectedDuration: connectedDuration ?? this.connectedDuration,
       connectedServer: connectedServer ?? this.connectedServer,
+      speedHistory: speedHistory ?? this.speedHistory,
     );
   }
 
@@ -43,9 +64,10 @@ class VpnStats {
   }
 
   static String formatSpeed(int bps) {
-    if (bps < 1024) return '$bps B/s';
-    if (bps < 1024 * 1024) return '${(bps / 1024).toStringAsFixed(1)} KB/s';
-    return '${(bps / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+    final bits = bps * 8;
+    if (bits < 1024) return '$bits bit/s';
+    if (bits < 1024 * 1024) return '${(bits / 1024).toStringAsFixed(1)} Kbit/s';
+    return '${(bits / (1024 * 1024)).toStringAsFixed(1)} Mbit/s';
   }
 
   static String formatDuration(Duration d) {

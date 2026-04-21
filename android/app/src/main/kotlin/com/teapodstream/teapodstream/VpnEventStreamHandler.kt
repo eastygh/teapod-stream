@@ -24,16 +24,33 @@ object VpnEventStreamHandler : EventChannel.StreamHandler {
             }
             eventBuffer.clear()
         }
-        // Replay current state immediately so Flutter is never stale after the
-        // Activity is recreated (e.g. config change, memory reclaim) while the
-        // VPN service is still running in the foreground.
+        // Replay current state and stats when Flutter starts listening
         val state = XrayVpnService.getNativeState()
         when (state) {
-            "connected" -> sendConnectedEvent(
-                XrayVpnService.activeSocksPort,
-                XrayVpnService.activeSocksUser,
-                XrayVpnService.activeSocksPassword,
-            )
+            "connected" -> {
+                sendConnectedEvent(
+                    XrayVpnService.activeSocksPort,
+                    XrayVpnService.activeSocksUser,
+                    XrayVpnService.activeSocksPassword,
+                )
+                // Send current stats
+                val currentStats = XrayVpnService.getStats()
+                sendEvent(mapOf(
+                    "type" to "stats",
+                    "upload" to currentStats["upload"],
+                    "download" to currentStats["download"],
+                    "uploadSpeed" to currentStats["uploadSpeed"],
+                    "downloadSpeed" to currentStats["downloadSpeed"],
+                ))
+                // Send stats history for chart
+                val history = XrayVpnService.getStatsHistory()
+                if (history.isNotEmpty()) {
+                    sendEvent(mapOf(
+                        "type" to "statsHistory",
+                        "history" to history,
+                    ))
+                }
+            }
             "connecting", "disconnecting" -> sendStateEvent(state)
             else -> sendStateEvent("disconnected")
         }

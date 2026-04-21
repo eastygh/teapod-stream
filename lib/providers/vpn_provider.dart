@@ -62,6 +62,7 @@ class VpnNotifier extends Notifier<VpnState2> {
   StreamSubscription<dynamic>? _eventSub;
   Timer? _connectTimeout;
   Timer? _disconnectTimeout;
+  Timer? _statsPoller;
   DateTime? _connectedAt;
 
 
@@ -86,6 +87,7 @@ class VpnNotifier extends Notifier<VpnState2> {
       _eventSub?.cancel();
       _connectTimeout?.cancel();
       _disconnectTimeout?.cancel();
+      _statsPoller?.cancel();
     });
 
     // Sync state on init (for case when VPN is already running from tile/notification)
@@ -101,10 +103,38 @@ class VpnNotifier extends Notifier<VpnState2> {
         // ipInfoProvider is AsyncNotifier, needs refresh to rebuild
         // ignore: unused_result
         ref.refresh(ipInfoProvider);
+        // Also fetch initial stats
+        _startStatsPolling();
       }
     });
 
     return const VpnState2();
+  }
+
+  void _startStatsPolling() {
+    // Prevent duplicate polling
+    if (_statsPoller?.isActive == true) return;
+    
+    _statsPoller = Timer.periodic(const Duration(seconds: 1), (_) async {
+      if (state.connectionState != VpnState.connected) {
+        return;
+      }
+      try {
+        final stats = await _engine.getStats();
+        _handleStats(Map<String, dynamic>.from({
+          'upload': stats.upload,
+          'download': stats.download,
+          'uploadSpeed': stats.uploadSpeed,
+          'downloadSpeed': stats.downloadSpeed,
+        }));
+        
+        // Also fetch stats history for chart
+        final history = await _engine.getStatsHistory();
+        if (history.isNotEmpty) {
+          _handleStatsHistory({'history': history});
+        }
+      } catch (_) {}
+    });
   }
 
   void _handleEvent(Map<String, dynamic> event) {
@@ -138,7 +168,9 @@ class VpnNotifier extends Notifier<VpnState2> {
           source: 'xray',
         ));
       case 'stats':
-        _handleStats(event);
+        break; // Ignore stats from EventChannel - we use poller instead
+      case 'statsHistory':
+        _handleStatsHistory(event);
     }
   }
 
@@ -156,6 +188,8 @@ class VpnNotifier extends Notifier<VpnState2> {
       _connectedAt ??= DateTime.now();
       _connectTimeout?.cancel();
       _connectTimeout = null;
+      // Start polling as backup for when EventChannel doesn't deliver (app in background)
+      _startStatsPolling();
     } else if (nativeState == VpnState.disconnected ||
         nativeState == VpnState.error) {
       _connectedAt = null;
@@ -185,8 +219,11 @@ class VpnNotifier extends Notifier<VpnState2> {
 
     if (nativeState == VpnState.disconnected || nativeState == VpnState.error) {
       // Reset stats on disconnect/error
+      _statsPoller?.cancel();
       state = VpnState2(
         connectionState: nativeState,
+        // Reset stats including speedHistory
+        stats: const VpnStats(),
         error: nativeState == VpnState.error
             ? (state.error ?? 'Connection error')
             : null,
@@ -197,26 +234,40 @@ class VpnNotifier extends Notifier<VpnState2> {
   }
 
   void _handleStats(Map<String, dynamic> event) {
-    final upload = event['upload'] as int? ?? 0;
-    final download = event['download'] as int? ?? 0;
-    final uploadSpeed = event['uploadSpeed'] as int? ?? 0;
-    final downloadSpeed = event['downloadSpeed'] as int? ?? 0;
+    // Handle both int and Long (from Kotlin)
+    final upload = (event['upload'] as num?)?.toInt() ?? 0;
+    final download = (event['download'] as num?)?.toInt() ?? 0;
+    final uploadSpeed = (event['uploadSpeed'] as num?)?.toInt() ?? 0;
+    final downloadSpeed = (event['downloadSpeed'] as num?)?.toInt() ?? 0;
 
-    if (state.stats.uploadBytes == upload &&
-        state.stats.downloadBytes == download) { return; }
-
-    final duration = _connectedAt != null
-        ? DateTime.now().difference(_connectedAt!)
-        : Duration.zero;
-
+    // Always update speed, even if bytes haven't changed (for re-connect)
     state = state.copyWith(
-      stats: VpnStats(
+      stats: state.stats.copyWith(
         uploadBytes: upload,
         downloadBytes: download,
         uploadSpeedBps: uploadSpeed,
         downloadSpeedBps: downloadSpeed,
-        connectedDuration: duration,
+        connectedDuration: _connectedAt != null
+            ? DateTime.now().difference(_connectedAt!)
+            : Duration.zero,
       ),
+    );
+  }
+
+  void _handleStatsHistory(Map<String, dynamic> event) {
+    final historyRaw = event['history'];
+    if (historyRaw is! List) return;
+
+    final history = historyRaw
+        .whereType<Map<Object?, Object?>>()
+        .map((m) => SpeedPoint.fromMap(Map<String, dynamic>.from(m)))
+        .toList();
+
+    if (history.isEmpty) return;
+
+    // Native history is the source of truth
+    state = state.copyWith(
+      stats: state.stats.copyWith(speedHistory: history),
     );
   }
 
@@ -299,6 +350,7 @@ class VpnNotifier extends Notifier<VpnState2> {
 
     try {
       await _engine.connect(config, options);
+      // Polling is now started in _onNativeState when connected
     } on PlatformException catch (e) {
       ref
           .read(logServiceProvider.notifier)

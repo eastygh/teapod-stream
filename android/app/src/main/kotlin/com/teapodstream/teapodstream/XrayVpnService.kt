@@ -86,12 +86,23 @@ class XrayVpnService : VpnService() {
         @Volatile private var lastUploadSpeed: Long = 0
         @Volatile private var lastDownloadSpeed: Long = 0
 
+        private const val MAX_STATS_HISTORY = 300
+        private val statsHistory = ArrayDeque<Pair<Long, Long>>(MAX_STATS_HISTORY)
+
         fun getStats(): Map<String, Long> = mapOf(
             "upload" to totalUpload,
             "download" to totalDownload,
             "uploadSpeed" to lastUploadSpeed,
             "downloadSpeed" to lastDownloadSpeed,
         )
+
+        fun getStatsHistory(): List<Map<String, Long>> {
+            synchronized(statsHistory) {
+                return statsHistory.map { (up, down) ->
+                    mapOf("uploadSpeed" to up, "downloadSpeed" to down)
+                }
+            }
+        }
 
         @JvmStatic fun showIntermediateNotification(context: android.content.Context, isConnecting: Boolean) {
             try {
@@ -773,6 +784,10 @@ class XrayVpnService : VpnService() {
         totalDownload = 0
         lastUploadSpeed = 0
         lastDownloadSpeed = 0
+        lastUp = 0
+        lastDown = 0
+        lastTime = System.currentTimeMillis()
+        statsHistory.clear()
 
         statsThread = Thread {
             while (isRunning.get()) {
@@ -794,6 +809,12 @@ class XrayVpnService : VpnService() {
                     lastUp = totalUpload
                     lastDown = totalDownload
                     lastTime = now
+                    synchronized(statsHistory) {
+                        if (statsHistory.size >= MAX_STATS_HISTORY) {
+                            statsHistory.removeFirst()
+                        }
+                        statsHistory.addLast(Pair(lastUploadSpeed, lastDownloadSpeed))
+                    }
                     VpnEventStreamHandler.sendStatsEvent(totalUpload, totalDownload, lastUploadSpeed, lastDownloadSpeed)
                     updateNotification(lastUploadSpeed, lastDownloadSpeed)
                 } catch (_: InterruptedException) { break } catch (_: Exception) {}

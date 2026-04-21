@@ -26,20 +26,40 @@ class StatsCard extends StatefulWidget {
 }
 
 class _StatsCardState extends State<StatsCard> {
-  static const _maxPoints = 300; // 5 minutes × 1 tick/sec
+  static const _maxPoints = 300;
   final List<_SpeedPoint> _history = [];
   Timer? _ticker;
   DateTime? _lastTickTime;
+  int _lastHistoryLength = 0;
+
+  List<_SpeedPoint> _convertHistory(List<SpeedPoint> native) {
+    return native.map((p) => _SpeedPoint(
+      upload: p.uploadSpeed.toDouble(),
+      download: p.downloadSpeed.toDouble(),
+    )).toList();
+  }
 
   @override
   void initState() {
     super.initState();
+    _loadHistoryFromNative();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (widget.connectionState == VpnState.disconnected) {
+        // Clear history when disconnected
+        if (_history.isNotEmpty) {
+          setState(() {
+            _history.clear();
+            _lastHistoryLength = 0;
+            _lastTickTime = null;
+          });
+        }
+        return;
+      }
+
       setState(() {
         final now = DateTime.now();
 
-        // Если с последнего тика прошло больше 2 секунд — приложение было
-        // в фоне. Заполняем пропуск нулями, чтобы не было длинных полос.
+        // Gap detection - if app was in background, add zeros
         if (_lastTickTime != null) {
           final gap = now.difference(_lastTickTime!).inSeconds;
           if (gap > 2) {
@@ -52,14 +72,40 @@ class _StatsCardState extends State<StatsCard> {
         }
         _lastTickTime = now;
 
-        final connected = widget.connectionState == VpnState.connected;
-        _history.add(_SpeedPoint(
-          upload: connected ? widget.stats.uploadSpeedBps.toDouble() : 0,
-          download: connected ? widget.stats.downloadSpeedBps.toDouble() : 0,
-        ));
-        if (_history.length > _maxPoints) _history.removeAt(0);
+        // Always sync with native history - it's the source of truth
+        final nativeHistory = widget.stats.speedHistory;
+        if (nativeHistory.isEmpty) {
+          // No history yet, nothing to do
+          return;
+        }
+
+        // If length changed, sync - either full reload or append
+        if (nativeHistory.length != _lastHistoryLength) {
+          if (_lastHistoryLength == 0 || _history.isEmpty) {
+            // First load or reload - full sync
+            _history.clear();
+            _history.addAll(_convertHistory(nativeHistory));
+          } else if (nativeHistory.length > _lastHistoryLength) {
+            // Append new points
+            _history.addAll(_convertHistory(nativeHistory.sublist(_lastHistoryLength)));
+          }
+          _lastHistoryLength = nativeHistory.length;
+        }
+
+        while (_history.length > _maxPoints) {
+          _history.removeAt(0);
+        }
       });
     });
+  }
+
+  void _loadHistoryFromNative() {
+    final nativeHistory = widget.stats.speedHistory;
+    _history.clear();
+    if (nativeHistory.isNotEmpty) {
+      _history.addAll(_convertHistory(nativeHistory));
+    }
+    _lastHistoryLength = nativeHistory.length;
   }
 
   @override
@@ -68,8 +114,15 @@ class _StatsCardState extends State<StatsCard> {
     super.dispose();
   }
 
-  // Всегда 300 слотов: слева нули, справа реальные данные.
-  // По мере заполнения нули «уходят» влево — эффект прокрутки.
+  String get _maxSpeedLabel {
+    if (_history.isEmpty) return '';
+    final maxVal = _history.fold<double>(0, (m, p) => max(m, max(p.upload, p.download)));
+    final bits = maxVal * 8;
+    if (bits < 1024) return '';
+    if (bits < 1024 * 1024) return 'пик: ${(bits / 1024).toStringAsFixed(0)} Kbit/s';
+    return 'пик: ${(bits / (1024 * 1024)).toStringAsFixed(1)} Mbit/s';
+  }
+
   List<_SpeedPoint> get _paddedHistory {
     if (_history.length >= _maxPoints) return _history;
     final pad = List.filled(
@@ -99,6 +152,20 @@ class _StatsCardState extends State<StatsCard> {
               width: double.infinity,
               child: CustomPaint(
                 painter: _SpeedChartPainter(_paddedHistory),
+              ),
+            ),
+          ),
+          // Max speed label
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Center(
+              child: Text(
+                _maxSpeedLabel,
+                style: TextStyle(
+                  color: AppColors.textSecondary.withValues(alpha: 0.7),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
           ),
@@ -151,17 +218,26 @@ class _StatsCardState extends State<StatsCard> {
                     ),
                   ],
                 ),
-                if (isActive) ...[
-                  const SizedBox(height: 12),
-                  _StatItem(
-                    icon: Icons.timer_outlined,
-                    label: 'Время подключения',
-                    value: VpnStats.formatDuration(
-                        widget.stats.connectedDuration),
-                    color: AppColors.textSecondary,
-                    expanded: true,
-                  ),
-                ],
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    _StatItem(
+                      icon: Icons.timer_outlined,
+                      label: 'Время',
+                      value: VpnStats.formatDuration(widget.stats.connectedDuration),
+                      color: AppColors.textSecondary,
+                    ),
+                    const Spacer(),
+                    if (widget.stats.connectedServer != null)
+                      Text(
+                        widget.stats.connectedServer!,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -171,29 +247,78 @@ class _StatsCardState extends State<StatsCard> {
   }
 }
 
+class _StatItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  const _StatItem({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceElevated,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SpeedChartPainter extends CustomPainter {
   final List<_SpeedPoint> history;
+  static final _uploadPaint = Paint()
+    ..color = AppColors.chartUpload
+    ..strokeWidth = 2
+    ..style = PaintingStyle.stroke;
+  static final _downloadPaint = Paint()
+    ..color = AppColors.chartDownload
+    ..strokeWidth = 2
+    ..style = PaintingStyle.stroke;
 
   _SpeedChartPainter(this.history);
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Background
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint()..color = AppColors.surfaceElevated,
-    );
-
-    // Center divider
-    canvas.drawLine(
-      Offset(0, size.height / 2),
-      Offset(size.width, size.height / 2),
-      Paint()
-        ..color = AppColors.border
-        ..strokeWidth = 0.5,
-    );
-
-    if (history.length < 2) return;
+    if (history.isEmpty) return;
 
     final maxVal = history.fold(
       0.0,
@@ -244,118 +369,34 @@ class _SpeedChartPainter extends CustomPainter {
       return isUp ? mid - v : mid + v;
     }
 
-    final fillPath = Path()..moveTo(0, mid);
-    final linePath = Path()..moveTo(0, y(0));
+    final fillPath = Path();
+    final linePath = Path();
 
-    for (int i = 0; i < n - 1; i++) {
-      final x0 = i * xStep;
-      final x1 = (i + 1) * xStep;
-      final y0 = y(i);
-      final y1 = y(i + 1);
-      final cpx = (x0 + x1) / 2;
-      fillPath.cubicTo(cpx, y0, cpx, y1, x1, y1);
-      linePath.cubicTo(cpx, y0, cpx, y1, x1, y1);
+    for (var i = 0; i < n; i++) {
+      final x = i * xStep;
+      final yVal = y(i);
+
+      if (i == 0) {
+        fillPath.moveTo(x, mid);
+        fillPath.lineTo(x, yVal);
+        linePath.moveTo(x, yVal);
+      } else {
+        fillPath.lineTo(x, yVal);
+        linePath.lineTo(x, yVal);
+      }
     }
 
-    fillPath.lineTo((n - 1) * xStep, mid);
+    fillPath.lineTo(size.width, mid);
     fillPath.close();
 
-    canvas.drawPath(
-      fillPath,
-      Paint()
-        ..color = color.withValues(alpha: 0.18)
-        ..style = PaintingStyle.fill,
-    );
+    final fillPaint = Paint()
+      ..color = color.withValues(alpha: 0.2)
+      ..style = PaintingStyle.fill;
 
-    canvas.drawPath(
-      linePath,
-      Paint()
-        ..color = color.withValues(alpha: 0.85)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
+    canvas.drawPath(fillPath, fillPaint);
+    canvas.drawPath(linePath, color == AppColors.chartDownload ? _downloadPaint : _uploadPaint);
   }
 
   @override
-  bool shouldRepaint(_SpeedChartPainter old) => true;
-}
-
-class _StatItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color color;
-  final bool expanded;
-
-  const _StatItem({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-    this.expanded = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final content = Row(
-      children: [
-        Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, color: color, size: 16),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 11,
-                ),
-              ),
-              Text(
-                value,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-
-    if (expanded) {
-      return Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: content,
-      );
-    }
-
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: content,
-      ),
-    );
-  }
+  bool shouldRepaint(_SpeedChartPainter old) => history.length != old.history.length;
 }
