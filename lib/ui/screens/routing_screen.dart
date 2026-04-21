@@ -345,6 +345,17 @@ class _RoutingBody extends StatelessWidget {
     ('PL', 'Польша'),
   ];
 
+  static const _popularGeoipServices = [
+    ('cloudflare', 'Cloudflare (geoip:cloudflare)'),
+    ('cloudfront', 'CloudFront (geoip:cloudfront)'),
+    ('facebook', 'Facebook (geoip:facebook)'),
+    ('fastly', 'Fastly (geoip:fastly)'),
+    ('google', 'Google (geoip:google)'),
+    ('netflix', 'Netflix (geoip:netflix)'),
+    ('telegram', 'Telegram (geoip:telegram)'),
+    ('twitter', 'Twitter / X (geoip:twitter)'),
+  ];
+
   Future<void> _showCountryPicker(BuildContext context) async {
     final selected = Set<String>.from(routing.geoCodes);
     final customCtrl = TextEditingController();
@@ -367,7 +378,7 @@ class _RoutingBody extends StatelessWidget {
               _sheetHandle(),
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text('Выберите страны',
+                child: Text('Выберите GeoIP',
                     style: TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 16,
@@ -381,6 +392,29 @@ class _RoutingBody extends StatelessWidget {
                       CheckboxListTile(
                         title: Text(
                           '$name  ($code)',
+                          style: const TextStyle(
+                              color: AppColors.textPrimary, fontSize: 14),
+                        ),
+                        value: selected.contains(code),
+                        onChanged: (v) => setState(() {
+                          if (v == true) { selected.add(code); }
+                          else { selected.remove(code); }
+                        }),
+                        checkColor: AppColors.surface,
+                        activeColor: AppColors.primary,
+                      ),
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Text('GeoIP сервисы',
+                          style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                    for (final (code, name) in _popularGeoipServices)
+                      CheckboxListTile(
+                        title: Text(
+                          name,
                           style: const TextStyle(
                               color: AppColors.textPrimary, fontSize: 14),
                         ),
