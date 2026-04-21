@@ -2,17 +2,39 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/app_constants.dart';
 import '../models/vpn_log_entry.dart';
 
-class LogService extends Notifier<List<VpnLogEntry>> {
-  @override
-  List<VpnLogEntry> build() => [];
+class _CircularBuffer {
+  final List<VpnLogEntry?> _buffer;
+  int _head = 0;
+  int _count = 0;
+
+  _CircularBuffer(int capacity) : _buffer = List<VpnLogEntry?>.filled(capacity, null);
 
   void add(VpnLogEntry entry) {
-    final current = [...state, entry];
-    if (current.length > AppConstants.maxLogEntries) {
-      state = current.sublist(current.length - AppConstants.maxLogEntries);
-    } else {
-      state = current;
+    _buffer[_head] = entry;
+    _head = (_head + 1) % _buffer.length;
+    if (_count < _buffer.length) _count++;
+  }
+
+  List<VpnLogEntry> toList() {
+    if (_count < _buffer.length) {
+      return _buffer.whereType<VpnLogEntry>().toList();
     }
+    return List.generate(_buffer.length, (i) => _buffer[(_head + i) % _buffer.length]!);
+  }
+}
+
+class LogService extends Notifier<List<VpnLogEntry>> {
+  late final _CircularBuffer _buffer;
+
+  @override
+  List<VpnLogEntry> build() {
+    _buffer = _CircularBuffer(AppConstants.maxLogEntries);
+    return [];
+  }
+
+  void add(VpnLogEntry entry) {
+    _buffer.add(entry);
+    state = _buffer.toList();
   }
 
   void addInfo(String message, {String? source}) =>
@@ -27,7 +49,10 @@ class LogService extends Notifier<List<VpnLogEntry>> {
   void addDebug(String message, {String? source}) =>
       add(VpnLogEntry.debug(message, source: source));
 
-  void clear() => state = [];
+  void clear() {
+    _buffer;
+    state = [];
+  }
 }
 
 final logServiceProvider =

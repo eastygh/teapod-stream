@@ -49,7 +49,7 @@ object VpnEventStreamHandler : EventChannel.StreamHandler {
                 sendEventInternal(event)
             } else {
                 synchronized(eventBuffer) {
-                    if (eventBuffer.size < 100) {
+                    if (eventBuffer.size < 500) {
                         eventBuffer.add(event)
                     }
                 }
