@@ -394,39 +394,13 @@ class XrayVpnService : VpnService() {
         killSwitch: Boolean = false,
     ) {
         if (!isRunning.compareAndSet(false, true)) return
-        // Close any TUN left open by a previous kill-switch blocking state
         try { tunInterface?.close() } catch (_: Exception) {}
         tunInterface = null
         killSwitchEnabled = killSwitch
         proxyOnlyMode = proxyOnly
         currentNativeState = "connecting"
         VpnEventStreamHandler.sendStateEvent("connecting")
-        log("info", "Starting VPN")
-
-        // Workaround: Aggressive flush of stale uid-based ip rules from previous install/uninstall.
-        try {
-            val dummyBuilder = Builder()
-                .setSession("Teapod-Flush")
-                .addAddress("10.255.255.2", 32)
-                .addRoute("0.0.0.0", 0)
-                .setBlocking(false)
-                
-            // FORCE the kernel to query the NEW UID for this package
-            dummyBuilder.addAllowedApplication(packageName)
-            
-            // Unbind from all physical networks to force ConnectivityService to rebuild routing graphs
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                dummyBuilder.setUnderlyingNetworks(emptyArray())
-            }
-
-            dummyBuilder.establish()?.close()
-            log("info", "Aggressive TUN flush completed")
-            
-            // Give netd a moment to process the teardown and clear caches
-            Thread.sleep(500)
-        } catch (e: Exception) {
-            log("warning", "Aggressive TUN flush failed (ignored): ${e.message}")
-        }
+        log("info", "Starting VPN (MTU: $tunMtu)")
 
         try {
             // Enable prefix proxy only when the ss:// URL contains ?prefix=.
@@ -460,31 +434,29 @@ class XrayVpnService : VpnService() {
                 startHeartbeat()
                 log("info", "Proxy-only mode active")
             } else {
-                // Full VPN tunnel mode
-                
-                // Hack: Randomize IP and Session to bypass aggressive kernel routing cache
                 val randomSubnet1 = (2..250).random()
                 val randomSubnet2 = (2..250).random()
                 val randomSubnet3 = (2..250).random()
                 val dynamicTunIp = "10.$randomSubnet1.$randomSubnet2.$randomSubnet3"
+
+                val hex1 = (1..65535).random().toString(16)
+                val hex2 = (1..65535).random().toString(16)
+                val hex3 = (1..65535).random().toString(16)
+                val dynamicTunIp6 = "fd00:$hex1:$hex2:$hex3::1"
+
                 val dynamicSession = "Teapod-${System.currentTimeMillis() % 10000}"
 
                 val builder = Builder()
                     .setSession(dynamicSession)
                     .setMtu(tunMtu)
-                    // Use dynamic IP instead of static tunAddress to force new rule creation
                     .addAddress(dynamicTunIp, 32)
                     .addRoute("0.0.0.0", 0)
+                    .addAddress(dynamicTunIp6, 64)
+                    .addRoute("::", 0)
                     .addDnsServer(tunDns)
-                    .allowFamily(OsConstants.AF_INET)
                     .setBlocking(true)
                     .setMetered(false)
 
-                // Don't call setUnderlyingNetworks here — Android sets VPN as activeNetwork
-                // after establish(). The correct physical network will be set via network callback.
-                // Setting it here may cause glitches when activeNetwork is still WiFi but becomes VPN later.
-
-                // Apply split tunneling based on VPN mode
                 if (vpnMode == "onlySelected") {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         for (pkg in includedPackages) {
@@ -963,12 +935,13 @@ class XrayVpnService : VpnService() {
         heartbeatThread = Thread {
             while (!Thread.currentThread().isInterrupted && isRunning.get()) {
                 try {
-                    Thread.sleep(30_000)
+                    Thread.sleep(15_000)
                     if (!isRunning.get()) break
                     val port = activeSocksPort
                     if (port <= 0) continue
 
                     checkTunnelConnectivity(port)
+                    heartbeatFailures.set(0)
                 } catch (_: InterruptedException) {
                     break
                 } catch (e: Exception) {
@@ -976,6 +949,24 @@ class XrayVpnService : VpnService() {
                     log("warning", "Heartbeat failed ($failures): ${e.message}")
                     if (failures >= 3) {
                         log("warning", "Heartbeat failed $failures times, reconnecting")
+                        reconnectInternal()
+                        break
+                    }
+                    var immediateRetries = 0
+                    while (immediateRetries < 2 && !Thread.currentThread().isInterrupted) {
+                        try {
+                            Thread.sleep(1000)
+                            checkTunnelConnectivity(activeSocksPort)
+                            heartbeatFailures.set(0)
+                            break
+                        } catch (_: InterruptedException) {
+                            break
+                        } catch (_: Exception) {
+                            immediateRetries++
+                        }
+                    }
+                    if (heartbeatFailures.get() >= 3) {
+                        log("warning", "Heartbeat retries exhausted, reconnecting")
                         reconnectInternal()
                         break
                     }
