@@ -596,34 +596,39 @@ class XrayVpnService : VpnService() {
 
         return object : TunValidator {
             override fun onValidate(srcIP: String, srcPort: Long, dstIP: String, dstPort: Long, protocol: Long): Boolean {
-                return try {
-                    val uid = cm.getConnectionOwnerUid(
+                var uid = -1
+                var threwException = false
+                try {
+                    uid = cm.getConnectionOwnerUid(
                         protocol.toInt(),
                         InetSocketAddress(srcIP, srcPort.toInt()),
                         InetSocketAddress(dstIP, dstPort.toInt())
                     )
-
-                    if (uid < 0) {
-                        if (protocol.toInt() == OsConstants.IPPROTO_UDP) {
-                            val cachedTime = trustedIpCache.get(dstIP)
-                            if (cachedTime != null && System.currentTimeMillis() - cachedTime < cacheTtlMs) {
-                                trustedIpCache.put(dstIP, System.currentTimeMillis())
-                                return true
-                            }
-                        }
-                        return false
-                    }
-
-                    val isAllowed = if (vpnMode == "onlySelected") uid in allowedUids else uid !in allowedUids
-
-                    if (isAllowed && protocol.toInt() == OsConstants.IPPROTO_TCP) {
-                        trustedIpCache.put(dstIP, System.currentTimeMillis())
-                    }
-
-                    isAllowed
                 } catch (_: Exception) {
-                    false
+                    threwException = true
                 }
+
+                // Strict Firewall & Smart Fallback only for UDP QUIC
+                if (uid < 0 && protocol.toInt() == OsConstants.IPPROTO_UDP) {
+                    val cachedTime = trustedIpCache.get(dstIP)
+                    if (cachedTime != null && System.currentTimeMillis() - cachedTime < cacheTtlMs) {
+                        trustedIpCache.put(dstIP, System.currentTimeMillis())
+                        return true
+                    }
+                    return false
+                }
+
+                if (threwException) {
+                    return true // allow on lookup failure (original logic)
+                }
+
+                val isAllowed = if (vpnMode == "onlySelected") uid in allowedUids else uid !in allowedUids
+
+                if (isAllowed && protocol.toInt() == OsConstants.IPPROTO_TCP) {
+                    trustedIpCache.put(dstIP, System.currentTimeMillis())
+                }
+
+                return isAllowed
             }
         }
     }
