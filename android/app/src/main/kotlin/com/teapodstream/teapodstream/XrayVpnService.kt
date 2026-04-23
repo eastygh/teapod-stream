@@ -573,16 +573,21 @@ class XrayVpnService : VpnService() {
                 log("warning", "Failed to get UID for $pkg: ${e.message}")
             }
         }
-        if (vpnMode != "onlySelected") {
-            // Always exclude own app to prevent routing loops at tun2socks level
-            try {
-                val uid = packageManager.getPackageUid(packageName, PackageManager.GET_META_DATA)
-                uids.add(uid)
-                log("info", "Excluded own UID ($packageName): $uid")
-            } catch (e: Exception) {
-                log("warning", "Failed to get own UID: ${e.message}")
+
+        try {
+            val ownUid = packageManager.getPackageUid(packageName, PackageManager.GET_META_DATA)
+            if (vpnMode == "onlySelected") {
+                if (uids.remove(ownUid)) {
+                    log("info", "Removed own UID ($ownUid) from Allowed list to prevent loop")
+                }
+            } else {
+                uids.add(ownUid)
+                log("info", "Excluded own UID ($packageName): $ownUid")
             }
+        } catch (e: Exception) {
+            log("warning", "Failed to resolve own UID: ${e.message}")
         }
+        
         return uids
     }
 
@@ -593,8 +598,6 @@ class XrayVpnService : VpnService() {
             }
         }
         val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
-        val trustedIpCache = LruCache<String, Long>(1000)
-        val cacheTtlMs = 300_000L
 
         return object : TunValidator {
             override fun onValidate(srcIP: String, srcPort: Long, dstIP: String, dstPort: Long, protocol: Long): Boolean {
@@ -610,30 +613,15 @@ class XrayVpnService : VpnService() {
                     threwException = true
                 }
 
-                if (threwException) {
-                    return true // allow on lookup failure (original logic)
+                if (threwException || uid < 0) {
+                    return false
                 }
 
-                if (uid < 0) {
-                    // Smart Fallback only for UDP QUIC
-                    if (protocol.toInt() == OsConstants.IPPROTO_UDP) {
-                        val cachedTime = trustedIpCache.get(dstIP)
-                        if (cachedTime != null && System.currentTimeMillis() - cachedTime < cacheTtlMs) {
-                            trustedIpCache.put(dstIP, System.currentTimeMillis())
-                            return true
-                        }
-                    }
-                    // Fallback to original logic for uid < 0 without exception
-                    return if (vpnMode == "onlySelected") -1 in allowedUids else -1 !in allowedUids
+                return if (vpnMode == "onlySelected") {
+                    uid in allowedUids
+                } else {
+                    uid !in allowedUids
                 }
-
-                val isAllowed = if (vpnMode == "onlySelected") uid in allowedUids else uid !in allowedUids
-
-                if (isAllowed && protocol.toInt() == OsConstants.IPPROTO_TCP) {
-                    trustedIpCache.put(dstIP, System.currentTimeMillis())
-                }
-
-                return isAllowed
             }
         }
     }
