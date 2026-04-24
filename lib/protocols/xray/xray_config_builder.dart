@@ -73,9 +73,7 @@ class XrayConfigBuilder {
           {
             'type': 'field',
             'inboundTag': ['socks-in'],
-            'outboundTag': routing.direction == RoutingDirection.onlySelected
-                ? 'direct'
-                : 'proxy',
+            'outboundTag': 'proxy',
           }
         ],
       },
