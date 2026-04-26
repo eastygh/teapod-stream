@@ -1002,15 +1002,35 @@ class XrayVpnService : VpnService() {
         if (!isRunning.get()) return
         networkChangeHandler.post {
             if (userRequestedDisconnect.get() || !isRunning.get()) return@post
-            // Don't send "connecting" here — ACTION_CONNECT_QUICK will do it
             Thread {
                 stopVpn(resultState = "connecting", reconnecting = true)
+                // Wait up to 30s for the physical network to be ready before starting xray.
+                // Without this, xray's upstream TCP dial hangs during WiFi→LTE transition,
+                // causing heartbeat "Read timed out" failures for 5-10 minutes.
+                val deadline = System.currentTimeMillis() + 30_000
+                while (!userRequestedDisconnect.get() && System.currentTimeMillis() < deadline) {
+                    if (hasDirectInternet()) break
+                    Thread.sleep(2_000)
+                }
+                if (userRequestedDisconnect.get()) return@Thread
                 val intent = Intent(this@XrayVpnService, XrayVpnService::class.java)
                     .setAction(ACTION_CONNECT_QUICK)
                 startService(intent)
             }.start()
         }
     }
+
+    // Returns true if the physical network (not through VPN) can reach 8.8.8.8:53.
+    // The VpnService process UID is excluded from the tunnel, so sockets here bypass TUN.
+    // bindSocket() additionally pins the socket to the physical interface, avoiding
+    // stale routing state during WiFi→LTE handover.
+    private fun hasDirectInternet(): Boolean = try {
+        Socket().use { socket ->
+            findPhysicalNetwork()?.bindSocket(socket)
+            socket.connect(InetSocketAddress("8.8.8.8", 53), 2_000)
+            true
+        }
+    } catch (_: Exception) { false }
 
     private fun startHeartbeat() {
         heartbeatThread?.interrupt()
@@ -1037,6 +1057,13 @@ class XrayVpnService : VpnService() {
                 } catch (_: InterruptedException) {
                     break
                 } catch (e: Exception) {
+                    // If the physical network is down it's not xray's fault — skip failure
+                    // count to prevent useless reconnect cycles during WiFi→LTE transitions.
+                    // network_changed will trigger a reconnect once the new network is ready.
+                    if (!hasDirectInternet()) {
+                        log("debug", "Heartbeat skipped: no direct internet")
+                        continue
+                    }
                     val failures = heartbeatFailures.incrementAndGet()
                     log("warning", "Heartbeat failed ($failures): ${e.message}")
                     if (failures >= 3) {

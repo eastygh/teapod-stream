@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -71,7 +72,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               vpnState: vpnState,
               protoLabel: protoLabel,
               pingMs: pingMs,
-              history: history,
               canToggle: canToggle,
               onToggle: () => ref.read(vpnProvider.notifier).toggle(),
             ),
@@ -128,7 +128,6 @@ class _HeroPanel extends StatelessWidget {
   final VpnState2 vpnState;
   final String protoLabel;
   final int? pingMs;
-  final List<SpeedPoint> history;
   final bool canToggle;
   final VoidCallback onToggle;
 
@@ -137,7 +136,6 @@ class _HeroPanel extends StatelessWidget {
     required this.vpnState,
     required this.protoLabel,
     required this.pingMs,
-    required this.history,
     required this.canToggle,
     required this.onToggle,
   });
@@ -147,43 +145,37 @@ class _HeroPanel extends StatelessWidget {
     final isConn = vpnState.isConnected;
     final isBusy = vpnState.isBusy;
 
-    // Corner ticks fill the container; content padded inside
     return Container(
+      width: double.infinity,
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: t.line, width: 1)),
       ),
       child: Stack(
+        alignment: Alignment.center,
         children: [
           _CornerTicks(t: t),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: _StateInfo(
-                        t: t,
-                        vpnState: vpnState,
-                        protoLabel: protoLabel,
-                        pingMs: pingMs,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    _SquareToggle(
-                      t: t,
-                      isConnected: isConn,
-                      isBusy: isBusy,
-                      enabled: canToggle,
-                      onTap: onToggle,
-                    ),
-                  ],
+                Text(
+                  'ТУННЕЛЬ · $protoLabel',
+                  style: AppTheme.mono(size: 10, color: t.textMuted, letterSpacing: 1.5),
+                ),
+                const SizedBox(height: 20),
+                _PowerCore(
+                  t: t,
+                  isConnected: isConn,
+                  isBusy: isBusy,
+                  enabled: canToggle,
+                  onTap: onToggle,
                 ),
                 const SizedBox(height: 16),
-                _PingBars(t: t, history: history, isConnected: isConn),
+                _StateInfo(
+                  t: t,
+                  vpnState: vpnState,
+                  pingMs: pingMs,
+                ),
               ],
             ),
           ),
@@ -198,13 +190,11 @@ class _HeroPanel extends StatelessWidget {
 class _StateInfo extends ConsumerWidget {
   final TeapodTokens t;
   final VpnState2 vpnState;
-  final String protoLabel;
   final int? pingMs;
 
   const _StateInfo({
     required this.t,
     required this.vpnState,
-    required this.protoLabel,
     this.pingMs,
   });
 
@@ -234,20 +224,15 @@ class _StateInfo extends ConsumerWidget {
     }
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(
-          'ТУННЕЛЬ · $protoLabel',
-          style: AppTheme.mono(size: 10, color: t.textMuted, letterSpacing: 1.5),
-        ),
-        const SizedBox(height: 8),
         Text(
           stateWord,
           style: AppTheme.sans(
-            size: 34, weight: FontWeight.w500,
+            size: 28, weight: FontWeight.w500,
             color: stateColor, letterSpacing: -1, height: 1),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Text(subtitle,
             style: AppTheme.mono(size: 11, color: t.textDim, letterSpacing: 0.5)),
       ],
@@ -255,16 +240,16 @@ class _StateInfo extends ConsumerWidget {
   }
 }
 
-// ── Square toggle ─────────────────────────────────────────────────
+// ── Power core ────────────────────────────────────────────────────
 
-class _SquareToggle extends StatefulWidget {
+class _PowerCore extends StatefulWidget {
   final TeapodTokens t;
   final bool isConnected;
   final bool isBusy;
   final bool enabled;
   final VoidCallback onTap;
 
-  const _SquareToggle({
+  const _PowerCore({
     required this.t,
     required this.isConnected,
     required this.isBusy,
@@ -273,25 +258,24 @@ class _SquareToggle extends StatefulWidget {
   });
 
   @override
-  State<_SquareToggle> createState() => _SquareToggleState();
+  State<_PowerCore> createState() => _PowerCoreState();
 }
 
-class _SquareToggleState extends State<_SquareToggle>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _blink;
+class _PowerCoreState extends State<_PowerCore> with SingleTickerProviderStateMixin {
+  late final AnimationController _spin;
 
   @override
   void initState() {
     super.initState();
-    _blink = AnimationController(
+    _spin = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 700),
-    )..repeat(reverse: true);
+      duration: const Duration(milliseconds: 1100),
+    )..repeat();
   }
 
   @override
   void dispose() {
-    _blink.dispose();
+    _spin.dispose();
     super.dispose();
   }
 
@@ -300,42 +284,78 @@ class _SquareToggleState extends State<_SquareToggle>
     final t    = widget.t;
     final conn = widget.isConnected;
     final busy = widget.isBusy;
-    final label = conn ? 'active' : (busy ? 'wait' : 'engage');
+    final actionLabel = conn ? 'отключить' : (busy ? 'одидание' : 'подключить');
 
-    final borderColor = conn ? t.accent : t.line;
-    final bgColor     = conn ? t.accent : Colors.transparent;
-    final iconColor   = conn ? t.bg : t.text;
+    const coreSize  = 220.0;
+    const outerSize = coreSize + 32.0;
+    const innerSize = coreSize - 44.0;
 
     return GestureDetector(
       onTap: widget.enabled ? widget.onTap : null,
-      child: Container(
-        width: 92,
-        height: 92,
-        decoration: BoxDecoration(
-          color: bgColor,
-          border: Border.all(color: borderColor, width: 1),
-          boxShadow: conn ? [BoxShadow(color: t.accentSoft, blurRadius: 24)] : null,
-        ),
+      child: SizedBox(
+        width: outerSize,
+        height: outerSize,
         child: Stack(
+          alignment: Alignment.center,
           children: [
-            if (!conn) ...[
-              Positioned(top: -1, left: -1,
-                child: _Notch(accent: t.accent, corner: _Corner.topLeft)),
-              Positioned(bottom: -1, right: -1,
-                child: _Notch(accent: t.accent, corner: _Corner.bottomRight)),
-            ],
-            Center(
+            // Outermost faint ring
+            Container(
+              width: outerSize,
+              height: outerSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: conn ? t.accentSoft : t.line,
+                  width: 1,
+                ),
+              ),
+            ),
+            // Spinning arc when connecting/disconnecting
+            if (busy)
+              SizedBox(
+                width: coreSize + 10,
+                height: coreSize + 10,
+                child: RotationTransition(
+                  turns: _spin,
+                  child: CustomPaint(painter: _SpinArcPainter(t.accent)),
+                ),
+              ),
+            // Main ring
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              width: coreSize,
+              height: coreSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: conn ? t.accent : t.line, width: 1),
+                boxShadow: conn
+                    ? [BoxShadow(color: t.accentSoft, blurRadius: 60, spreadRadius: 4)]
+                    : null,
+              ),
+            ),
+            // Inner disk
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              width: innerSize,
+              height: innerSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: conn ? t.accent : t.bgElev,
+                border: Border.all(color: conn ? t.accent : t.line, width: 1),
+              ),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _PowerIcon(color: iconColor, size: 30),
-                  const SizedBox(height: 4),
-                  busy
-                      ? FadeTransition(
-                          opacity: _blink,
-                          child: _labelText(label, iconColor, t),
-                        )
-                      : _labelText(label, iconColor, t),
+                  _PowerIcon(color: conn ? t.bg : t.text, size: 40),
+                  const SizedBox(height: 6),
+                  Text(
+                    actionLabel.toUpperCase(),
+                    style: AppTheme.mono(
+                      size: 9,
+                      color: conn ? t.bg : t.textDim,
+                      letterSpacing: 2,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -344,49 +364,30 @@ class _SquareToggleState extends State<_SquareToggle>
       ),
     );
   }
-
-  Widget _labelText(String text, Color color, TeapodTokens t) => Text(
-    text.toUpperCase(),
-    style: AppTheme.mono(size: 9, color: color, letterSpacing: 1.5),
-  );
 }
 
-enum _Corner { topLeft, bottomRight }
-
-class _Notch extends StatelessWidget {
-  final Color accent;
-  final _Corner corner;
-  const _Notch({required this.accent, required this.corner});
-
-  @override
-  Widget build(BuildContext context) {
-    final isTop = corner == _Corner.topLeft;
-    return SizedBox(
-      width: 8, height: 8,
-      child: CustomPaint(painter: _NotchPainter(color: accent, isTopLeft: isTop)),
-    );
-  }
-}
-
-class _NotchPainter extends CustomPainter {
+class _SpinArcPainter extends CustomPainter {
   final Color color;
-  final bool isTopLeft;
-  const _NotchPainter({required this.color, required this.isTopLeft});
+  const _SpinArcPainter(this.color);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color..strokeWidth = 2..style = PaintingStyle.stroke;
-    if (isTopLeft) {
-      canvas.drawLine(Offset.zero, Offset(size.width, 0), paint);
-      canvas.drawLine(Offset.zero, Offset(0, size.height), paint);
-    } else {
-      canvas.drawLine(Offset(0, size.height), Offset(size.width, size.height), paint);
-      canvas.drawLine(Offset(size.width, 0), Offset(size.width, size.height), paint);
-    }
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      -math.pi / 2,
+      math.pi * 1.5,
+      false,
+      paint,
+    );
   }
 
   @override
-  bool shouldRepaint(_NotchPainter old) => old.color != color;
+  bool shouldRepaint(_SpinArcPainter old) => old.color != color;
 }
 
 // ── Power icon ────────────────────────────────────────────────────
@@ -416,10 +417,7 @@ class _PowerPainter extends CustomPainter {
     final s = size.width / 24.0;
     canvas.scale(s, s);
 
-    // Stem from top to circle entry
     canvas.drawLine(const Offset(12, 2), const Offset(12, 9), paint);
-    // Arc: center (12,13), radius 8, gap at top ~60°
-    // Start at -60° (1 o'clock), sweep 300° clockwise
     canvas.drawArc(
       Rect.fromCircle(center: const Offset(12, 13), radius: 8),
       -math.pi / 3,
@@ -500,59 +498,6 @@ class _TickPainter extends CustomPainter {
   bool shouldRepaint(_TickPainter old) => old.color != color;
 }
 
-// ── Ping bars ─────────────────────────────────────────────────────
-
-class _PingBars extends StatelessWidget {
-  final TeapodTokens t;
-  final List<SpeedPoint> history;
-  final bool isConnected;
-
-  const _PingBars({
-    required this.t,
-    required this.history,
-    required this.isConnected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const barCount = 40;
-    final samples = history.map((s) => s.downloadSpeed.toDouble()).toList();
-    while (samples.length < barCount) { samples.insert(0, 0.0); }
-    final last40 = samples.length > barCount
-        ? samples.sublist(samples.length - barCount)
-        : samples;
-
-    final maxVal = last40.fold<double>(1.0, (m, v) => v > m ? v : m);
-
-    return SizedBox(
-      height: 24,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: last40.asMap().entries.map((e) {
-          final i = e.key;
-          final v = e.value;
-          final h = math.max(2.0, (v / maxVal) * 22.0);
-          final opacity = isConnected ? 0.4 + (i / barCount) * 0.6 : 0.35;
-          return Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 0.8),
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: Opacity(
-                  opacity: opacity,
-                  child: Container(
-                    height: h,
-                    color: isConnected ? t.accent : t.line,
-                  ),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-}
 
 // ── Metrics grid ──────────────────────────────────────────────────
 
@@ -589,26 +534,10 @@ class _MetricsGrid extends StatelessWidget {
     return 'Mbit/s';
   }
 
-  String _bytesValue(int bytes) {
-    if (bytes < 1024) return '$bytes';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toStringAsFixed(1);
-    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toStringAsFixed(2);
-    return (bytes / (1024 * 1024 * 1024)).toStringAsFixed(2);
-  }
-
-  String _bytesUnit(int bytes) {
-    if (bytes < 1024) return 'B';
-    if (bytes < 1024 * 1024) return 'KB';
-    if (bytes < 1024 * 1024 * 1024) return 'MB';
-    return 'GB';
-  }
-
   @override
   Widget build(BuildContext context) {
-    final upSpeed    = isConnected ? stats.uploadSpeedBps   : 0;
-    final downSpeed  = isConnected ? stats.downloadSpeedBps : 0;
-    final upBytes    = isConnected ? stats.uploadBytes   : 0;
-    final downBytes  = isConnected ? stats.downloadBytes : 0;
+    final upSpeed   = isConnected ? stats.uploadSpeedBps   : 0;
+    final downSpeed = isConnected ? stats.downloadSpeedBps : 0;
 
     final sparkSamples = history
         .map((s) => s.downloadSpeed / (1024.0 * 1024.0))
@@ -669,31 +598,6 @@ class _MetricsGrid extends StatelessWidget {
             ],
           ),
         ),
-        Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: _MetricCell(
-                  t: t,
-                  label: '↑ Отдано',
-                  value: _bytesValue(upBytes),
-                  unit: _bytesUnit(upBytes),
-                  borderRight: true,
-                ),
-              ),
-              Expanded(
-                child: _MetricCell(
-                  t: t,
-                  label: '↓ Загружено',
-                  value: _bytesValue(downBytes),
-                  unit: _bytesUnit(downBytes),
-                  alignRight: true,
-                ),
-              ),
-            ],
-          ),
-        ),
         _SparklineRow(
           t: t,
           stats: stats,
@@ -727,7 +631,8 @@ class _MetricCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 11),
+      padding: const EdgeInsets.fromLTRB(16, 7, 16, 7),
+      clipBehavior: Clip.hardEdge,
       decoration: BoxDecoration(
         border: Border(
           top:   BorderSide(color: t.line, width: 1),
@@ -741,9 +646,9 @@ class _MetricCell extends StatelessWidget {
         children: [
           Text(
             label.toUpperCase(),
-            style: AppTheme.mono(size: 10, color: t.textMuted, letterSpacing: 1),
+            style: AppTheme.mono(size: 9, color: t.textMuted, letterSpacing: 1),
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 3),
           Row(
             mainAxisAlignment:
                 alignRight ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -753,20 +658,21 @@ class _MetricCell extends StatelessWidget {
               Text(
                 value,
                 style: AppTheme.mono(
-                  size: 20, weight: FontWeight.w500,
+                  size: 18, weight: FontWeight.w500,
                   color: t.text, letterSpacing: -0.5),
               ),
               if (unit != null) ...[
                 const SizedBox(width: 4),
                 Text(unit!,
-                    style: AppTheme.mono(size: 10, color: t.textDim)),
+                    style: AppTheme.mono(size: 9, color: t.textDim)),
               ],
             ],
           ),
           if (hint != null) ...[
-            const SizedBox(height: 3),
+            const SizedBox(height: 2),
             Text(hint!,
-                style: AppTheme.mono(size: 10, color: t.textMuted),
+                maxLines: 1,
+                style: AppTheme.mono(size: 9, color: t.textMuted),
                 overflow: TextOverflow.ellipsis),
           ],
         ],
@@ -847,7 +753,7 @@ class _SparklineRow extends StatelessWidget {
   }
 }
 
-// ── Clock icon (replaces hourglass emoji) ─────────────────────────
+// ── Clock icon ────────────────────────────────────────────────────
 
 class _ClockIcon extends StatelessWidget {
   final Color color;
@@ -873,9 +779,7 @@ class _ClockPainter extends CustomPainter {
     final c = Offset(size.width / 2, size.height / 2);
     final r = size.width / 2 - 0.5;
     canvas.drawCircle(c, r, p);
-    // Hour hand (pointing ~10:30)
     canvas.drawLine(c, c + Offset(-r * 0.35, -r * 0.5), p);
-    // Minute hand (pointing ~12:00)
     canvas.drawLine(c, c + Offset(0, -r * 0.65), p);
   }
 
