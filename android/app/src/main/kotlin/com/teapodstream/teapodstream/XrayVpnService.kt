@@ -646,14 +646,19 @@ class XrayVpnService : VpnService() {
                     threwException = true
                 }
 
-                if (threwException || uid < 0) {
-                    return false
+                if (threwException) {
+                    // Lookup threw (e.g. API unavailable) — allow to avoid breaking connectivity.
+                    return true
                 }
 
+                // uid=-1 means no local owner (e.g. tethered client packets).
+                // Apply the same vpnMode logic: in allExcept mode -1 is not excluded → allow;
+                // in onlySelected mode -1 is not in the allowlist → block.
+                val effectiveUid = if (uid < 0) -1 else uid
                 return if (vpnMode == "onlySelected") {
-                    uid in allowedUids
+                    effectiveUid in allowedUids
                 } else {
-                    uid !in allowedUids
+                    effectiveUid !in allowedUids
                 }
             }
         }
