@@ -15,7 +15,10 @@ class UpdateIdle extends UpdateState {}
 
 class UpdateChecking extends UpdateState {}
 
-class UpdateUpToDate extends UpdateState {}
+class UpdateUpToDate extends UpdateState {
+  final UpdateInfo info;
+  UpdateUpToDate(this.info);
+}
 
 class UpdateAvailable extends UpdateState {
   final UpdateInfo info;
@@ -58,15 +61,11 @@ class UpdateNotifier extends Notifier<UpdateState> {
   Future<void> checkForUpdate() async {
     state = UpdateChecking();
     try {
-      final info = await PackageInfo.fromPlatform();
-      final currentVersion = info.version;
-      final abi =
-          await _channel.invokeMethod<String>('getAbi') ?? 'arm64-v8a';
+      final pkgInfo = await PackageInfo.fromPlatform();
+      final currentVersion = pkgInfo.version;
+      final abi = await _channel.invokeMethod<String>('getAbi') ?? 'arm64-v8a';
       final vpn = ref.read(vpnProvider);
-      final settings = ref.read(settingsProvider).maybeWhen(
-            data: (d) => d,
-            orElse: () => null,
-          );
+      final settings = ref.read(settingsProvider).maybeWhen(data: (d) => d, orElse: () => null);
       final channel = settings?.updateChannel ?? UpdateChannel.stable;
       final update = await _service.checkForUpdate(
         currentVersion,
@@ -75,20 +74,30 @@ class UpdateNotifier extends Notifier<UpdateState> {
         socksPort: vpn.isConnected ? vpn.activeSocksPort : null,
         socksUser: vpn.activeSocksUser,
         socksPassword: vpn.activeSocksPassword,
+        force: true,
       );
       if (update == null) {
-        state = UpdateUpToDate();
-        Future.delayed(const Duration(seconds: 3), () {
-          if (state is UpdateUpToDate) state = UpdateIdle();
-        });
-      } else {
-        final path = await _apkPath(update.version, abi);
+        state = UpdateError('Не удалось получить данные о релизе');
+        return;
+      }
+      final path = await _apkPath(update.version, abi);
+      await _cleanOldApks(keepPath: path);
+      if (_isNewer(update.version, currentVersion)) {
         final resumable = File(path).existsSync() ? File(path).lengthSync() : 0;
         state = UpdateAvailable(update, resumableBytes: resumable);
+      } else {
+        state = UpdateUpToDate(update);
       }
     } catch (e) {
       state = UpdateError('Ошибка проверки: $e');
     }
+  }
+
+  Future<void> reinstall(UpdateInfo info) async {
+    final abi = await _channel.invokeMethod<String>('getAbi') ?? 'arm64-v8a';
+    final path = await _apkPath(info.version, abi);
+    if (File(path).existsSync()) await File(path).delete();
+    await startDownload(info);
   }
 
   Future<void> startDownload(UpdateInfo info) async {
@@ -139,14 +148,38 @@ class UpdateNotifier extends Notifier<UpdateState> {
   Future<void> installApk(String filePath) async {
     try {
       await _channel.invokeMethod<void>('installApk', {'filePath': filePath});
+      await _cleanOldApks(keepPath: null);
+      state = UpdateIdle();
     } on PlatformException catch (e) {
       state = UpdateError(e.message ?? 'Ошибка установки');
     }
   }
 
+  bool _isNewer(String a, String b) {
+    final ap = a.split('.').map((s) => int.tryParse(s) ?? 0).toList();
+    final bp = b.split('.').map((s) => int.tryParse(s) ?? 0).toList();
+    for (int i = 0; i < 3; i++) {
+      final av = i < ap.length ? ap[i] : 0;
+      final bv = i < bp.length ? bp[i] : 0;
+      if (av != bv) return av > bv;
+    }
+    return false;
+  }
+
   Future<String> _apkPath(String version, String abi) async {
     final dir = await getApplicationSupportDirectory();
     return '${dir.path}/teapod-update-$abi-$version.apk';
+  }
+
+  Future<void> _cleanOldApks({String? keepPath}) async {
+    final dir = await getApplicationSupportDirectory();
+    for (final f in dir.listSync().whereType<File>()) {
+      if (f.path.contains('teapod-update-') && f.path.endsWith('.apk')) {
+        if (keepPath == null || f.path != keepPath) {
+          await f.delete();
+        }
+      }
+    }
   }
 }
 

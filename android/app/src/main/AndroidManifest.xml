@@ -76,6 +76,16 @@
                 android:value="true" />
         </service>
 
+        <!-- Automation: Tasker/Macrodroid via com.teapodstream.CONNECT / .DISCONNECT broadcasts -->
+        <receiver
+            android:name=".VpnCommandReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.teapodstream.CONNECT" />
+                <action android:name="com.teapodstream.DISCONNECT" />
+            </intent-filter>
+        </receiver>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

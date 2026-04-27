@@ -19,6 +19,7 @@ class SplitTunnelScreen extends ConsumerStatefulWidget {
 class _SplitTunnelScreenState extends ConsumerState<SplitTunnelScreen> {
   String _search = '';
   bool _hideSystemApps = true;
+  bool _ghostsCleaned = false;
 
   void _togglePackage(String pkg, bool isOnlySelected) {
     final settings = ref.read(settingsProvider).maybeWhen(
@@ -248,6 +249,14 @@ class _SplitTunnelScreenState extends ConsumerState<SplitTunnelScreen> {
                       style: AppTheme.mono(size: 12, color: t.danger)),
                 ),
                 data: (apps) {
+                  if (!_ghostsCleaned) {
+                    _ghostsCleaned = true;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      ref.read(settingsProvider.notifier).cleanGhostPackages(
+                          apps.map((a) => a.packageName).toSet());
+                    });
+                  }
+
                   var filtered = _search.isEmpty
                       ? apps
                       : apps
