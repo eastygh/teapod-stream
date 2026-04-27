@@ -314,6 +314,8 @@ if (!routing.isActive) return rules;
             'host': config.wsHost,
           if (config.xhttpMode != null && config.xhttpMode!.isNotEmpty)
             'mode': config.xhttpMode,
+          if (config.xhttpExtra != null && config.xhttpExtra!.isNotEmpty)
+            'extra': config.xhttpExtra,
         },
       if (config.transport == VpnTransport.splithttp)
         'splithttpSettings': {

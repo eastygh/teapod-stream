@@ -2,6 +2,17 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import '../../core/models/vpn_config.dart';
 
+Map<String, dynamic>? _parseExtra(String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  try {
+    final decoded = Uri.decodeComponent(raw);
+    final json = jsonDecode(decoded);
+    return json is Map<String, dynamic> ? json : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 class VlessParser {
   static VpnConfig? parseUri(String uri) {
     if (uri.startsWith('vless://')) return _parseVless(uri);
@@ -69,6 +80,7 @@ class VlessParser {
         flow: params['flow'],
         encryption: params['encryption'] ?? 'none',
         xhttpMode: params['mode'],
+        xhttpExtra: _parseExtra(params['extra']),
         createdAt: DateTime.now(),
         rawUri: uri,
       );
@@ -106,6 +118,7 @@ class VlessParser {
         grpcServiceName: json['path'] as String?,
         alterId: json['aid']?.toString() ?? '0',
         xhttpMode: json['mode'] as String?,
+        xhttpExtra: json['extra'] is Map<String, dynamic> ? json['extra'] as Map<String, dynamic> : null,
         createdAt: DateTime.now(),
         rawUri: uri,
       );
@@ -152,6 +165,7 @@ class VlessParser {
         wsHost: params['host'],
         fingerprint: params['fp'],
         xhttpMode: params['mode'],
+        xhttpExtra: _parseExtra(params['extra']),
         createdAt: DateTime.now(),
         rawUri: uri,
       );

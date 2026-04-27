@@ -36,6 +36,7 @@ class VpnConfig {
   final String? ssPrefix; // hex-encoded prefix bytes for Outline Shadowsocks (e.g. "160301...")
   final String? obfsPassword; // for Hysteria2 salamander obfuscation
   final String? xhttpMode; // for xhttp transport: "auto", "packet-up", "stream-up", "stream-one"
+  final Map<String, dynamic>? xhttpExtra; // raw extra object passed to xhttpSettings
 
   const VpnConfig({
     required this.id,
@@ -67,6 +68,7 @@ class VpnConfig {
     this.ssPrefix,
     this.obfsPassword,
     this.xhttpMode,
+    this.xhttpExtra,
   });
 
   VpnConfig copyWith({
@@ -105,6 +107,7 @@ class VpnConfig {
       ssPrefix: ssPrefix,
       obfsPassword: obfsPassword,
       xhttpMode: xhttpMode,
+      xhttpExtra: xhttpExtra,
     );
   }
 
@@ -138,6 +141,7 @@ class VpnConfig {
         'ssPrefix': ssPrefix,
         'obfsPassword': obfsPassword,
         'xhttpMode': xhttpMode,
+        'xhttpExtra': xhttpExtra,
       };
 
   factory VpnConfig.fromJson(Map<String, dynamic> json) => VpnConfig(
@@ -179,6 +183,7 @@ class VpnConfig {
         ssPrefix: json['ssPrefix'] as String?,
         obfsPassword: json['obfsPassword'] as String?,
         xhttpMode: json['xhttpMode'] as String?,
+        xhttpExtra: json['xhttpExtra'] as Map<String, dynamic>?,
       );
 
   String toJsonString() => jsonEncode(toJson());
