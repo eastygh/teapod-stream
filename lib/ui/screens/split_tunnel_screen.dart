@@ -8,6 +8,7 @@ import '../../providers/apps_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/breadcrumb_bar.dart';
 
 class SplitTunnelScreen extends ConsumerStatefulWidget {
   const SplitTunnelScreen({super.key});
@@ -75,28 +76,7 @@ class _SplitTunnelScreenState extends ConsumerState<SplitTunnelScreen> {
                 ],
               ),
             ),
-            // ── Breadcrumb ────────────────────────────────────────
-            GestureDetector(
-              onTap: () => Navigator.pop(context),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
-                decoration:
-                    BoxDecoration(border: Border(bottom: BorderSide(color: t.lineSoft))),
-                child: Row(
-                  children: [
-                    Text('‹', style: AppTheme.mono(size: 12, color: t.textMuted)),
-                    const SizedBox(width: 8),
-                    Text('settings',
-                        style: AppTheme.mono(size: 10, color: t.textMuted, letterSpacing: 1)),
-                    const SizedBox(width: 6),
-                    Text('/', style: AppTheme.mono(size: 10, color: t.textMuted)),
-                    const SizedBox(width: 6),
-                    Text('split-tunnel',
-                        style: AppTheme.mono(size: 10, color: t.text, letterSpacing: 1)),
-                  ],
-                ),
-              ),
-            ),
+            BreadcrumbBar(t: t, parent: 'settings', current: 'split-tunnel'),
             // ── Hero panel ────────────────────────────────────────
             Container(
               width: double.infinity,

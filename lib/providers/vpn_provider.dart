@@ -295,11 +295,17 @@ class VpnNotifier extends Notifier<VpnState2> {
         ref.read(configProvider).maybeWhen(data: (d) => d, orElse: () => null);
     final config = configState?.activeConfig;
     if (config == null) {
-      ref
-          .read(logServiceProvider.notifier)
-          .addError('No configuration selected');
-      state = state.copyWith(
-          connectionState: VpnState.error, error: 'No configuration selected');
+      ref.read(logServiceProvider.notifier).addError('No configuration selected');
+      state = state.copyWith(connectionState: VpnState.error, error: 'No configuration selected');
+      _connectTimeout?.cancel();
+      _connectTimeout = null;
+      return;
+    }
+
+    final validationError = config.validate();
+    if (validationError != null) {
+      ref.read(logServiceProvider.notifier).addError('Invalid config: $validationError');
+      state = state.copyWith(connectionState: VpnState.error, error: validationError);
       _connectTimeout?.cancel();
       _connectTimeout = null;
       return;

@@ -179,11 +179,6 @@ class MainActivity : FlutterActivity() {
                         ))
                     }
 
-                    "getStats" -> {
-                        val stats = XrayVpnService.getStats()
-                        result.success(stats)
-                    }
-
                     "getStatsHistory" -> {
                         val history = XrayVpnService.getStatsHistory()
                         result.success(history)
@@ -226,6 +221,11 @@ class MainActivity : FlutterActivity() {
     }
 
     private var pendingVpnAction: (() -> Unit)? = null
+
+    override fun onDestroy() {
+        super.onDestroy()
+        VpnEventStreamHandler.appContext = null
+    }
 
     private fun requestVpnPermission(result: MethodChannel.Result, action: () -> Unit) {
         val intent = VpnService.prepare(this)

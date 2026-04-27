@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../providers/app_info_provider.dart';
 import '../../providers/update_provider.dart';
 import '../../core/services/update_service.dart' show UpdateChannel, UpdateInfo;
 import '../../core/models/dns_config.dart';
@@ -25,23 +25,12 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  String _version = '';
   String _xrayVersion = '';
 
   @override
   void initState() {
     super.initState();
-    _loadVersion();
     _loadBinaryVersions();
-  }
-
-  Future<void> _loadVersion() async {
-    try {
-      final info = await PackageInfo.fromPlatform();
-      if (mounted) setState(() => _version = 'v${info.version}');
-    } catch (_) {
-      if (mounted) setState(() => _version = 'v?');
-    }
   }
 
   Future<void> _loadBinaryVersions() async {
@@ -62,6 +51,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final settingsAsync = ref.watch(settingsProvider);
     final vpnState = ref.watch(vpnProvider);
+    final version = ref.watch(appVersionProvider).maybeWhen(data: (v) => v, orElse: () => 'v?');
     final t = Theme.of(context).extension<TeapodTokens>()!;
     final locked = vpnState.isConnected || vpnState.isConnecting;
 
@@ -81,7 +71,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 data: (settings) => _SettingsBody(
                   settings: settings,
                   isConnected: vpnState.isConnected,
-                  version: _version,
+                  version: version,
                   xrayVersion: _xrayVersion,
                   onUpdate: (s) => ref.read(settingsProvider.notifier).save(s),
                 ),
@@ -126,7 +116,7 @@ class _SetHeroPanel extends StatelessWidget {
   final bool locked;
   const _SetHeroPanel({required this.t, required this.locked});
 
-  static const Color _gold = Color(0xFFD9A65B);
+  static const Color _gold = AppColors.accentGold;
 
   @override
   Widget build(BuildContext context) {

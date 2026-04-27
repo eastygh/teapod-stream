@@ -19,7 +19,7 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
   // empty = all
   final Set<LogLevel> _filters = {};
 
-  static const Color _warn = Color(0xFFD9A65B);
+  static const Color _warn = AppColors.accentGold;
 
   @override
   void initState() {

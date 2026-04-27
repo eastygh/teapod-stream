@@ -33,6 +33,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import teapodcore.Teapodcore
 import teapodcore.XrayCallback
 import teapodcore.TunValidator
@@ -68,23 +69,30 @@ class XrayVpnService : VpnService() {
         // Set true on explicit user disconnect, false on connect — guards reconnectInternal()
         val userRequestedDisconnect = AtomicBoolean(false)
 
-        // Active SOCKS credentials — stored so onListen can replay them with "connected"
-        @Volatile var activeSocksPort: Int = 0
-            private set
-        @Volatile var activeSocksUser: String = ""
-            private set
-        @Volatile var activeSocksPassword: String = ""
-            private set
+        // Active SOCKS credentials — stored so onListen can replay them with "connected".
+        // AtomicReference ensures the three fields are always read/written as a consistent unit.
+        private data class SocksCredentials(val port: Int, val user: String, val password: String)
+        private val _socksCredentials = AtomicReference(SocksCredentials(0, "", ""))
 
-        @JvmStatic fun getSocksCredentials(): Map<String, Any> = mapOf(
-            "port" to activeSocksPort,
-            "user" to activeSocksUser,
-            "password" to activeSocksPassword
-        )
+        val activeSocksPort: Int get() = _socksCredentials.get().port
+        val activeSocksUser: String get() = _socksCredentials.get().user
+        val activeSocksPassword: String get() = _socksCredentials.get().password
+
+        @JvmStatic fun getSocksCredentials(): Map<String, Any> {
+            val c = _socksCredentials.get()
+            return mapOf("port" to c.port, "user" to c.user, "password" to c.password)
+        }
 
         private const val NOTIFICATION_CHANNEL_ID = "vpn_service"
         private const val NOTIFICATION_CHANNEL_MINIMAL_ID = "vpn_service_minimal"
         private const val NOTIFICATION_ID = 1
+
+        private const val HEARTBEAT_URL_HOST = "cp.cloudflare.com"
+        private const val CONNECTIVITY_CHECK_HOST = "8.8.8.8"
+        private const val HEARTBEAT_INTERVAL_MS = 15_000L
+        private const val STATS_INTERVAL_MS = 1_000L
+        private const val STOP_THREAD_TIMEOUT_MS = 5_000L
+        private const val RECONNECT_DEBOUNCE_MS = 2_000L
 
         @Volatile private var totalUpload: Long = 0
         @Volatile private var totalDownload: Long = 0
@@ -222,7 +230,7 @@ class XrayVpnService : VpnService() {
                     val stopThread = Thread { stopVpn(explicit = true) }
                     stopThread.start()
                     try {
-                        stopThread.join(5000) // safety timeout — wait max 5s for движок to stop
+                        stopThread.join(STOP_THREAD_TIMEOUT_MS)
                         if (stopThread.isAlive) {
                             log("warning", "stopVpn timed out after 5s, forcing disconnected state")
                         }
@@ -822,7 +830,7 @@ class XrayVpnService : VpnService() {
         statsThread = Thread {
             while (isRunning.get()) {
                 try {
-                    Thread.sleep(1000)
+                    Thread.sleep(STATS_INTERVAL_MS)
                     val now = System.currentTimeMillis()
                     val elapsed = (now - lastTime) / 1000.0
 
@@ -969,7 +977,7 @@ class XrayVpnService : VpnService() {
         pendingNetworkRunnable?.let { networkChangeHandler.removeCallbacks(it) }
         val r = Runnable { reconnectInternal() }
         pendingNetworkRunnable = r
-        networkChangeHandler.postDelayed(r, 2000L)
+        networkChangeHandler.postDelayed(r, RECONNECT_DEBOUNCE_MS)
     }
 
     private fun reconnectInternal() {
@@ -985,7 +993,7 @@ class XrayVpnService : VpnService() {
                 val deadline = System.currentTimeMillis() + 30_000
                 while (!userRequestedDisconnect.get() && System.currentTimeMillis() < deadline) {
                     if (hasDirectInternet()) break
-                    Thread.sleep(2_000)
+                    Thread.sleep(RECONNECT_DEBOUNCE_MS)
                 }
                 if (userRequestedDisconnect.get()) return@Thread
                 val intent = Intent(this@XrayVpnService, XrayVpnService::class.java)
@@ -1002,7 +1010,7 @@ class XrayVpnService : VpnService() {
     private fun hasDirectInternet(): Boolean = try {
         Socket().use { socket ->
             findPhysicalNetwork()?.bindSocket(socket)
-            socket.connect(InetSocketAddress("8.8.8.8", 53), 2_000)
+            socket.connect(InetSocketAddress(CONNECTIVITY_CHECK_HOST, 53), RECONNECT_DEBOUNCE_MS.toInt())
             true
         }
     } catch (_: Exception) { false }
@@ -1013,7 +1021,7 @@ class XrayVpnService : VpnService() {
         heartbeatThread = Thread {
             while (!Thread.currentThread().isInterrupted && isRunning.get()) {
                 try {
-                    Thread.sleep(15_000)
+                    Thread.sleep(HEARTBEAT_INTERVAL_MS)
                     if (!isRunning.get()) break
                     val port = activeSocksPort
                     if (port <= 0) continue
@@ -1092,9 +1100,10 @@ class XrayVpnService : VpnService() {
             when (resp[1].toInt()) {
                 0 -> {}
                 2 -> {
-                    if (activeSocksUser.isNotEmpty()) {
-                        val u = activeSocksUser.toByteArray()
-                        val p = activeSocksPassword.toByteArray()
+                    val creds = _socksCredentials.get()
+                    if (creds.user.isNotEmpty()) {
+                        val u = creds.user.toByteArray()
+                        val p = creds.password.toByteArray()
                         out.write(byteArrayOf(1, u.size.toByte()) + u + byteArrayOf(p.size.toByte()) + p)
                         inp.read(resp)
                         if (resp[1] != 0.toByte()) throw Exception("SOCKS auth failed")
@@ -1104,7 +1113,7 @@ class XrayVpnService : VpnService() {
             }
 
             // Connect to cp.cloudflare.com:80
-            val destHost = "cp.cloudflare.com"
+            val destHost = HEARTBEAT_URL_HOST
             val destPort = 80
             val domainBytes = destHost.toByteArray()
             out.write(
@@ -1256,9 +1265,7 @@ class XrayVpnService : VpnService() {
 
     private fun setConnected(socksPort: Int, socksUser: String, socksPassword: String) {
         currentNativeState = "connected"
-        activeSocksPort = socksPort
-        activeSocksUser = socksUser
-        activeSocksPassword = socksPassword
+        _socksCredentials.set(SocksCredentials(socksPort, socksUser, socksPassword))
         VpnEventStreamHandler.sendConnectedEvent(socksPort, socksUser, socksPassword)
         sendBroadcast(Intent("com.teapodstream.STATE_CHANGED").apply {
             putExtra("state", "connected")

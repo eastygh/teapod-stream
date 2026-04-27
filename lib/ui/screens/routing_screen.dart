@@ -5,6 +5,7 @@ import '../../providers/settings_provider.dart';
 import '../../providers/vpn_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../widgets/breadcrumb_bar.dart';
 
 String _formatDomainLabel(String zone) {
   if (zone == 'xn--p1ai') return '.рф';
@@ -98,27 +99,7 @@ class _RoutingBody extends StatelessWidget {
             ],
           ),
         ),
-        // ── Breadcrumb back row ─────────────────────────────────
-        GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: t.lineSoft))),
-            child: Row(
-              children: [
-                Text('‹', style: AppTheme.mono(size: 12, color: t.textMuted)),
-                const SizedBox(width: 8),
-                Text('settings',
-                    style: AppTheme.mono(size: 10, color: t.textMuted, letterSpacing: 1)),
-                const SizedBox(width: 6),
-                Text('/', style: AppTheme.mono(size: 10, color: t.textMuted)),
-                const SizedBox(width: 6),
-                Text('routing',
-                    style: AppTheme.mono(size: 10, color: t.text, letterSpacing: 1)),
-              ],
-            ),
-          ),
-        ),
+        BreadcrumbBar(t: t, parent: 'settings', current: 'routing'),
         // ── Hero panel ──────────────────────────────────────────
         Container(
           decoration: BoxDecoration(border: Border(bottom: BorderSide(color: t.line))),
