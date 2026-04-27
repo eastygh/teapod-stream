@@ -214,8 +214,7 @@ class XrayVpnService : VpnService() {
                 userRequestedDisconnect.set(true)
                 // Signal disconnecting immediately so the button turns yellow
                 // even when triggered from the notification (no Flutter-side handler).
-                currentNativeState = "disconnecting"
-                VpnEventStreamHandler.sendStateEvent("disconnecting")
+                setState("disconnecting")
 
                 // Run cleanup off the main thread — Go calls (stopTun2Socks/stopXray)
                 // can block if goroutines are stuck after long uptime or network changes.
@@ -232,8 +231,7 @@ class XrayVpnService : VpnService() {
                     }
 
                     // Guarantee "disconnected" is always sent
-                    currentNativeState = "disconnected"
-                    VpnEventStreamHandler.sendStateEvent("disconnected")
+                    setState("disconnected")
                     // Update notification to "Disconnected" ONLY after we've actually
                     // finished (or timed out) the stopping process.
                     showDisconnectedNotification()
@@ -276,8 +274,7 @@ class XrayVpnService : VpnService() {
                         openApp()
                     } else {
                         userRequestedDisconnect.set(false)
-                        currentNativeState = "connecting"
-                        VpnEventStreamHandler.sendStateEvent("connecting")
+                        setState("connecting")
                         val configText = configFile.readText()
                         // Extract SOCKS credentials from the saved xray config instead of storing them
                         val (socksUser, socksPassword) = extractSocksFromConfig(configText)
@@ -310,8 +307,7 @@ class XrayVpnService : VpnService() {
             val needsPermission = !params.proxyOnly && VpnService.prepare(this) != null
             if (!needsPermission) {
                 userRequestedDisconnect.set(false)
-                currentNativeState = "connecting"
-                VpnEventStreamHandler.sendStateEvent("connecting")
+                setState("connecting")
                 try {
                     val configText = configFile.readText()
                     val (socksUser, socksPassword) = extractSocksFromConfig(configText)
@@ -326,8 +322,7 @@ class XrayVpnService : VpnService() {
                     return START_STICKY
                 } catch (e: Exception) {
                     log("warning", "Auto-connect failed: ${e.message}")
-                    currentNativeState = "disconnected"
-                    VpnEventStreamHandler.sendStateEvent("disconnected")
+                    setState("disconnected")
                 }
             }
         }
@@ -437,8 +432,7 @@ class XrayVpnService : VpnService() {
         tunInterface = null
         killSwitchEnabled = killSwitch
         proxyOnlyMode = proxyOnly
-        currentNativeState = "connecting"
-        VpnEventStreamHandler.sendStateEvent("connecting")
+        setState("connecting")
         log("info", "Starting VPN (MTU: $tunMtu)")
 
         try {
@@ -465,11 +459,7 @@ class XrayVpnService : VpnService() {
                 log("info", "xray started (proxy-only, SOCKS on port $socksPort)")
                 startStatsMonitoring()
                 acquireWakeLock()
-                currentNativeState = "connected"
-                activeSocksPort = socksPort
-                activeSocksUser = socksUser
-                activeSocksPassword = socksPassword
-                VpnEventStreamHandler.sendConnectedEvent(socksPort, socksUser, socksPassword)
+                setConnected(socksPort, socksUser, socksPassword)
                 startHeartbeat()
                 log("info", "Proxy-only mode active")
             } else {
@@ -551,11 +541,7 @@ class XrayVpnService : VpnService() {
                 startStatsMonitoring()
                 registerNetworkCallback()
                 acquireWakeLock()
-                currentNativeState = "connected"
-                activeSocksPort = socksPort
-                activeSocksUser = socksUser
-                activeSocksPassword = socksPassword
-                VpnEventStreamHandler.sendConnectedEvent(socksPort, socksUser, socksPassword)
+                setConnected(socksPort, socksUser, socksPassword)
                 startHeartbeat()
                 log("info", "VPN connected successfully")
             }
@@ -712,8 +698,7 @@ class XrayVpnService : VpnService() {
         stopVpn(explicit = true)
         // Force state update in case stopVpn returned early (isRunning was already false
         // during a reconnect cycle when the user tapped the system VPN popup).
-        currentNativeState = "disconnected"
-        VpnEventStreamHandler.sendStateEvent("disconnected")
+        setState("disconnected")
         stopSelf()
     }
 
@@ -810,8 +795,7 @@ class XrayVpnService : VpnService() {
         } finally {
             // Don't overwrite "connecting" state when doing internal reconnect
             if (!reconnecting) {
-                currentNativeState = resultState
-                VpnEventStreamHandler.sendStateEvent(resultState)
+                setState(resultState)
             }
         }
     }
@@ -1262,6 +1246,24 @@ class XrayVpnService : VpnService() {
             val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             manager.notify(NOTIFICATION_ID, buildDisconnectedNotification())
         } catch (_: Exception) {}
+    }
+
+    private fun setState(state: String) {
+        currentNativeState = state
+        VpnEventStreamHandler.sendStateEvent(state)
+        sendBroadcast(Intent("com.teapodstream.STATE_CHANGED").apply { putExtra("state", state) })
+    }
+
+    private fun setConnected(socksPort: Int, socksUser: String, socksPassword: String) {
+        currentNativeState = "connected"
+        activeSocksPort = socksPort
+        activeSocksUser = socksUser
+        activeSocksPassword = socksPassword
+        VpnEventStreamHandler.sendConnectedEvent(socksPort, socksUser, socksPassword)
+        sendBroadcast(Intent("com.teapodstream.STATE_CHANGED").apply {
+            putExtra("state", "connected")
+            putExtra("socksPort", socksPort)
+        })
     }
 
     private fun updateNotification(uploadSpeed: Long, downloadSpeed: Long) {
