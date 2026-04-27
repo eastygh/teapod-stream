@@ -709,7 +709,11 @@ class XrayVpnService : VpnService() {
     override fun onRevoke() {
         // Вызывается Android, когда VPN отключен извне (системные настройки, другой VPN)
         log("info", "VPN revoked by system")
-        stopVpn()
+        stopVpn(explicit = true)
+        // Force state update in case stopVpn returned early (isRunning was already false
+        // during a reconnect cycle when the user tapped the system VPN popup).
+        currentNativeState = "disconnected"
+        VpnEventStreamHandler.sendStateEvent("disconnected")
         stopSelf()
     }
 
