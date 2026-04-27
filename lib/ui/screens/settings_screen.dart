@@ -1142,14 +1142,10 @@ class _UpdateTile extends ConsumerWidget {
             child: CircularProgressIndicator(strokeWidth: 1.5, color: t.accent),
           ),
         ),
-      UpdateUpToDate() => _UpdateRow(
-          t: t,
-          label: 'Обновлений нет',
-          labelColor: t.textDim,
-          action: Icon(Icons.check_rounded, color: t.accent, size: 16),
-        ),
+      UpdateUpToDate(:final info) =>
+        _UpdateVersionTile(info: info, isUpdate: false),
       UpdateAvailable(:final info, :final resumableBytes) =>
-        _UpdateAvailableTile(info: info, resumableBytes: resumableBytes),
+        _UpdateVersionTile(info: info, isUpdate: true, resumableBytes: resumableBytes),
       UpdateDownloading(:final info, :final downloaded, :final total) =>
         Container(
           padding: const EdgeInsets.fromLTRB(0, 10, 0, 10),
@@ -1263,56 +1259,70 @@ class _SqBtn extends StatelessWidget {
   }
 }
 
-class _UpdateAvailableTile extends ConsumerWidget {
+class _UpdateVersionTile extends ConsumerWidget {
   final UpdateInfo info;
+  final bool isUpdate;
   final int resumableBytes;
-  const _UpdateAvailableTile({required this.info, required this.resumableBytes});
+  const _UpdateVersionTile({
+    required this.info,
+    required this.isUpdate,
+    this.resumableBytes = 0,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = Theme.of(context).extension<TeapodTokens>()!;
-    final hasChangelog = info.changelog != null && info.changelog!.isNotEmpty;
-    final btnLabel = resumableBytes > 0 ? 'ПРОДОЛЖИТЬ' : 'СКАЧАТЬ';
+    final hasChangelog = info.changelog?.isNotEmpty ?? false;
 
-    if (!hasChangelog) {
-      return _UpdateRow(
-        t: t,
-        label: 'Доступна v${info.version}',
-        action: _SqBtn(
-          t: t, label: btnLabel, filled: true,
-          onTap: () => ref.read(updateProvider.notifier).startDownload(info),
-        ),
-      );
-    }
+    final badge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: isUpdate ? t.accentSoft : Colors.transparent,
+        border: Border.all(color: isUpdate ? t.accent : t.line),
+      ),
+      child: Text(
+        'v${info.version}',
+        style: AppTheme.mono(
+            size: 10,
+            color: isUpdate ? t.accent : t.textMuted,
+            letterSpacing: 0.5),
+      ),
+    );
 
-    return Theme(
-      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
-        title: Text('Доступна v${info.version}', style: AppTheme.sans(size: 14, color: t.text)),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _SqBtn(
-              t: t, label: btnLabel, filled: true,
-              onTap: () => ref.read(updateProvider.notifier).startDownload(info),
-            ),
-            const SizedBox(width: 8),
-            Icon(Icons.expand_more, color: t.textMuted, size: 18),
-          ],
-        ),
+    final label = isUpdate ? 'доступно обновление' : 'актуальная версия';
+    final btnLabel = isUpdate ? (resumableBytes > 0 ? 'ПРОДОЛЖИТЬ' : 'СКАЧАТЬ') : 'ПЕРЕУСТАНОВИТЬ';
+    final onTap = isUpdate
+        ? () => ref.read(updateProvider.notifier).startDownload(info)
+        : () => ref.read(updateProvider.notifier).reinstall(info);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: SelectableText(
+          Row(
+            children: [
+              badge,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(label,
+                    style: AppTheme.sans(size: 14, color: isUpdate ? t.text : t.textDim)),
+              ),
+              const SizedBox(width: 12),
+              _SqBtn(t: t, label: btnLabel, filled: isUpdate, onTap: onTap),
+            ],
+          ),
+          if (hasChangelog) ...[
+            const SizedBox(height: 10),
+            SelectableText(
               info.changelog!,
               style: AppTheme.mono(size: 11, color: t.textDim, height: 1.5),
             ),
-          ),
+          ],
         ],
       ),
     );
+
   }
 }
 

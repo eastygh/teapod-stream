@@ -53,6 +53,7 @@ class UpdateService {
 
   /// Returns null if already up to date or no matching APK asset found.
   /// Pass [socksPort] to route through the active VPN SOCKS5 proxy.
+  /// Pass [force] to skip version comparison (for reinstall).
   Future<UpdateInfo?> checkForUpdate(
     String currentVersion,
     String abi, {
@@ -60,6 +61,7 @@ class UpdateService {
     int? socksPort,
     String? socksUser,
     String? socksPassword,
+    bool force = false,
   }) async {
     final client = _makeClient(
         socksPort: socksPort, user: socksUser, password: socksPassword);
@@ -69,7 +71,7 @@ class UpdateService {
       final tagName = (releaseJson['tag_name'] as String? ?? '')
           .replaceFirst(RegExp(r'^v'), '');
       if (tagName.isEmpty) return null;
-      if (_compareVersions(tagName, currentVersion) <= 0) return null;
+      if (!force && _compareVersions(tagName, currentVersion) <= 0) return null;
       final changelog = releaseJson['body'] as String?;
       final assets = releaseJson['assets'] as List<dynamic>? ?? [];
       for (final asset in assets) {
