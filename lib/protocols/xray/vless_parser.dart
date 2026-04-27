@@ -164,6 +164,7 @@ class VlessParser {
         wsPath: params['path'],
         wsHost: params['host'],
         fingerprint: params['fp'],
+        grpcServiceName: params['serviceName'],
         xhttpMode: params['mode'],
         xhttpExtra: _parseExtra(params['extra']),
         createdAt: DateTime.now(),

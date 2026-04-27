@@ -12,6 +12,21 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
     state = AsyncData(settings);
   }
 
+  Future<void> cleanGhostPackages(Set<String> installedPackages) async {
+    final current = state.maybeWhen(data: (d) => d, orElse: () => null);
+    if (current == null) return;
+    final newIncluded = current.includedPackages.intersection(installedPackages);
+    final newExcluded = current.excludedPackages.intersection(installedPackages);
+    if (newIncluded.length == current.includedPackages.length &&
+        newExcluded.length == current.excludedPackages.length) {
+      return;
+    }
+    await save(current.copyWith(
+      includedPackages: newIncluded,
+      excludedPackages: newExcluded,
+    ));
+  }
+
   Future<void> toggleExcludedPackage(String package) async {
     final current = state.maybeWhen(data: (d) => d, orElse: () => null);
     if (current == null) return;
