@@ -129,4 +129,7 @@ object VpnEventStreamHandler : EventChannel.StreamHandler {
         )
     }
 
+    fun sendDeeplinkEvent(uri: String) {
+        sendEvent(mapOf("type" to "deeplink", "uri" to uri))
     }
+}

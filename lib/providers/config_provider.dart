@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/models/vpn_config.dart';
+import '../core/models/connections_bundle.dart';
 import '../core/services/config_storage_service.dart';
 import '../core/services/subscription_service.dart' show SubscriptionService, SubscriptionFetchResult, HwidDeviceInfo;
 import '../core/services/device_service.dart';
@@ -223,6 +224,137 @@ class ConfigNotifier extends AsyncNotifier<ConfigState> {
           current.configs.any((c) => c.id == current.activeConfigId && c.subscriptionId == subId),
     ));
   }
+
+  // ─── Import from ConnectionsBundle ───
+
+  Future<ImportConnectionsResult> importBundle(ConnectionsBundle bundle) async {
+    final current = state.maybeWhen(data: (d) => d, orElse: () => null) ?? const ConfigState();
+
+    // Build a map of old subscription ID -> new subscription ID
+    final subIdMap = <String, String>{};
+    var addedConfigs = 0;
+    var addedSubscriptions = 0;
+    final newSubscriptions = <Subscription>[];
+
+    // Import subscriptions first, creating new IDs
+    for (final sub in bundle.subscriptions) {
+      final existingSub = current.subscriptions.where((s) => s.url == sub.url).firstOrNull;
+      
+      if (existingSub != null) {
+        subIdMap[sub.id] = existingSub.id;
+        continue;
+      }
+
+      final newId = 'sub_import_${DateTime.now().millisecondsSinceEpoch}_$addedSubscriptions';
+      subIdMap[sub.id] = newId;
+
+      final newSub = Subscription(
+        id: newId,
+        name: sub.name,
+        url: sub.url,
+        createdAt: DateTime.now(),
+        lastFetchedAt: sub.lastFetchedAt,
+        expireAt: sub.expireAt,
+        uploadBytes: sub.uploadBytes,
+        downloadBytes: sub.downloadBytes,
+        totalBytes: sub.totalBytes,
+        announce: sub.announce,
+        announceUrl: sub.announceUrl,
+      );
+      newSubscriptions.add(newSub);
+      await storage.addSubscription(newSub);
+      addedSubscriptions++;
+    }
+
+    // Remap subscription IDs in configs and generate new IDs
+    final newTs = DateTime.now().millisecondsSinceEpoch;
+    final remappedConfigs = bundle.configs.asMap().entries.map((entry) {
+      final idx = entry.key;
+      final c = entry.value;
+      final newId = 'cfg_import_${newTs}_${idx}_${c.id.hashCode}';
+      final newSubId = c.subscriptionId != null && subIdMap.containsKey(c.subscriptionId)
+          ? subIdMap[c.subscriptionId]
+          : c.subscriptionId;
+
+      return VpnConfig(
+        id: newId,
+        name: c.name,
+        protocol: c.protocol,
+        address: c.address,
+        port: c.port,
+        uuid: c.uuid,
+        security: c.security,
+        transport: c.transport,
+        sni: c.sni,
+        wsPath: c.wsPath,
+        wsHost: c.wsHost,
+        grpcServiceName: c.grpcServiceName,
+        fingerprint: c.fingerprint,
+        publicKey: c.publicKey,
+        shortId: c.shortId,
+        spiderX: c.spiderX,
+        postQuantumKey: c.postQuantumKey,
+        flow: c.flow,
+        encryption: c.encryption,
+        alterId: c.alterId,
+        method: c.method,
+        password: c.password,
+        createdAt: DateTime.now(),
+        rawUri: c.rawUri,
+        latencyMs: c.latencyMs,
+        subscriptionId: newSubId,
+        ssPrefix: c.ssPrefix,
+        obfsPassword: c.obfsPassword,
+        xhttpMode: c.xhttpMode,
+        xhttpExtra: c.xhttpExtra,
+      );
+    }).toList();
+
+    // Import configs that don't already exist (by rawUri or address:port match)
+    final existingKeys = current.configs.map((c) => c.rawUri ?? '${c.address}:${c.port}').toSet();
+    final newConfigs = <VpnConfig>[];
+    for (final config in remappedConfigs) {
+      final key = config.rawUri ?? '${config.address}:${config.port}';
+      if (!existingKeys.contains(key)) {
+        newConfigs.add(config);
+      }
+    }
+
+    if (newConfigs.isNotEmpty) {
+      await storage.addConfigsBatch(newConfigs);
+      addedConfigs = newConfigs.length;
+    }
+
+    // Update in-memory state
+    final updatedSubs = [...current.subscriptions, ...newSubscriptions];
+
+    state = AsyncData(current.copyWith(
+      configs: [...current.configs, ...newConfigs],
+      subscriptions: updatedSubs,
+    ));
+
+    if (state.value?.activeConfigId == null && newConfigs.isNotEmpty) {
+      await setActiveConfig(newConfigs.first.id);
+    }
+
+    return ImportConnectionsResult(
+      addedConfigs: addedConfigs,
+      addedSubscriptions: addedSubscriptions,
+      skippedConfigs: remappedConfigs.length - newConfigs.length,
+    );
+  }
+}
+
+class ImportConnectionsResult {
+  final int addedConfigs;
+  final int addedSubscriptions;
+  final int skippedConfigs;
+
+  const ImportConnectionsResult({
+    required this.addedConfigs,
+    required this.addedSubscriptions,
+    required this.skippedConfigs,
+  });
 }
 
 final configProvider =

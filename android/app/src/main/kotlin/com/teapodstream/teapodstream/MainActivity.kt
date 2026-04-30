@@ -25,6 +25,19 @@ class MainActivity : FlutterActivity() {
     }
 
     private var pendingResult: MethodChannel.Result? = null
+    private var pendingDeeplink: String? = null
+
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        intent?.let { handleIncomingIntentForPending(it) }
+    }
+
+    private fun handleIncomingIntentForPending(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme == "teapod" && uri.host == "import") {
+            pendingDeeplink = uri.toString()
+        }
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -35,6 +48,12 @@ class MainActivity : FlutterActivity() {
         // Event channel for native → Flutter events
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
             .setStreamHandler(VpnEventStreamHandler)
+
+        // Send pending deeplink if the app was launched via a link
+        pendingDeeplink?.let { uri ->
+            VpnEventStreamHandler.sendDeeplinkEvent(uri)
+            pendingDeeplink = null
+        }
 
         // Method channel for Flutter → native calls
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
@@ -226,6 +245,18 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         super.onDestroy()
         VpnEventStreamHandler.appContext = null
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme == "teapod" && uri.host == "import") {
+            VpnEventStreamHandler.sendDeeplinkEvent(uri.toString())
+        }
     }
 
     private fun requestVpnPermission(result: MethodChannel.Result, action: () -> Unit) {

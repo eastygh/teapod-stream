@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../core/models/profile.dart';
 import '../../core/models/profile_bundle.dart';
+import '../../core/services/deeplink_router.dart';
 import '../../providers/profile_provider.dart';
 import 'dart:convert';
 import '../theme/app_theme.dart';
@@ -229,7 +230,7 @@ void _profShowImportDialog(BuildContext context, WidgetRef ref, TeapodTokens t) 
                 maxLines: 4,
                 style: AppTheme.mono(size: 11, color: t.text),
                 decoration: InputDecoration(
-                  hintText: 'Вставьте deeplink (teapod://...) или JSON',
+                  hintText: 'Вставьте ссылку (teapod://...) или JSON профиля',
                   hintStyle: AppTheme.mono(size: 10, color: t.textMuted),
                   contentPadding: const EdgeInsets.all(10),
                   isDense: true,
@@ -271,10 +272,27 @@ void _profShowImportDialog(BuildContext context, WidgetRef ref, TeapodTokens t) 
             ),
             TextButton(
               onPressed: () async {
-                final bundle = ProfileNotifier.tryParseBundle(ctrl.text);
-                if (bundle == null) {
+                var loading = false;
+
+                final parseFuture = _parseProfileInput(ctrl.text);
+
+                if (DeeplinkRouter.parse(ctrl.text.trim())?.source == DeeplinkSource.url) {
+                  loading = true;
+                  showDialog(
+                    context: ctx,
+                    barrierDismissible: false,
+                    builder: (_) => const Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                final (result, error, sourceUrl) = await parseFuture;
+
+                if (loading && ctx.mounted) Navigator.pop(ctx);
+                if (!ctx.mounted) return;
+
+                if (result == null) {
                   ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                    content: Text('Неверный формат',
+                    content: Text(error.isNotEmpty ? error : 'Неверный формат',
                         style: AppTheme.mono(size: 12, color: t.bg)),
                     backgroundColor: t.danger,
                     duration: const Duration(seconds: 2),
@@ -283,9 +301,10 @@ void _profShowImportDialog(BuildContext context, WidgetRef ref, TeapodTokens t) 
                 }
                 Navigator.pop(ctx);
                 await ref.read(profileProvider.notifier).importBundle(
-                  bundle,
+                  result,
                   switchToProfile: switchTo,
                   makeReadonly: makeReadonly,
+                  sourceUrl: sourceUrl,
                 );
               },
               child: Text('Импортировать',
@@ -332,6 +351,12 @@ void _profShowImportDialog(BuildContext context, WidgetRef ref, TeapodTokens t) 
             ? () {
                 Navigator.pop(ctx);
                 _confirmDelete(context, ref, profile, t);
+              }
+            : null,
+        onRefresh: profile.sourceUrl != null
+            ? () {
+                Navigator.pop(ctx);
+                _refreshProfile(context, ref, profile, t);
               }
             : null,
       ),
@@ -403,7 +428,7 @@ void _profShowImportDialog(BuildContext context, WidgetRef ref, TeapodTokens t) 
               _ExportRow(
                 t: t,
                 label: 'Копировать ссылку',
-                hint: 'teapod://import?data=...',
+                hint: 'teapod://import/profile?data=...',
                 onTap: () {
                   Clipboard.setData(ClipboardData(text: deeplink));
                   Navigator.pop(ctx);
@@ -418,7 +443,7 @@ void _profShowImportDialog(BuildContext context, WidgetRef ref, TeapodTokens t) 
               _ExportRow(
                 t: t,
                 label: 'Поделиться файлом',
-                hint: '${profile.name.toLowerCase().replaceAll(' ', '_')}.teapod',
+                hint: '${profile.name.toLowerCase().replaceAll(' ', '_')}.json',
                 onTap: () async {
                   Navigator.pop(ctx);
                   await _shareAsFile(context, profile, bundle);
@@ -436,7 +461,7 @@ void _profShowImportDialog(BuildContext context, WidgetRef ref, TeapodTokens t) 
       BuildContext context, Profile profile, ProfileBundle bundle) async {
     final dir = await getTemporaryDirectory();
     final safeName = profile.name.replaceAll(RegExp(r'[^a-zA-Z0-9а-яА-Я_\- ]'), '_');
-    final file = File('${dir.path}/$safeName.teapod');
+    final file = File('${dir.path}/$safeName.json');
     await file.writeAsString(
       const JsonEncoder.withIndent('  ').convert(bundle.toJson()),
     );
@@ -472,6 +497,34 @@ void _profShowImportDialog(BuildContext context, WidgetRef ref, TeapodTokens t) 
         ],
       ),
     );
+  }
+
+  void _refreshProfile(
+      BuildContext context, WidgetRef ref, Profile profile, TeapodTokens t) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    ref.read(profileProvider.notifier).refreshProfile(profile.id, profile.sourceUrl!).then((result) {
+      if (!context.mounted) return;
+      Navigator.pop(context);
+      if (result != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Профиль «${profile.name}» обновлён',
+              style: AppTheme.mono(size: 12, color: t.bg)),
+          backgroundColor: t.accent,
+          duration: const Duration(seconds: 2),
+        ));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Ошибка обновления',
+              style: AppTheme.mono(size: 12, color: t.bg)),
+          backgroundColor: t.danger,
+          duration: const Duration(seconds: 2),
+        ));
+      }
+    });
   }
 
 // ── Profile card ──────────────────────────────────────────────────
@@ -586,6 +639,7 @@ class _ProfileActionsSheet extends StatelessWidget {
   final VoidCallback onToggleReadonly;
   final VoidCallback onExport;
   final VoidCallback? onDelete;
+  final VoidCallback? onRefresh;
 
   const _ProfileActionsSheet({
     required this.profile,
@@ -596,6 +650,7 @@ class _ProfileActionsSheet extends StatelessWidget {
     required this.onToggleReadonly,
     required this.onExport,
     this.onDelete,
+    this.onRefresh,
   });
 
   @override
@@ -622,6 +677,8 @@ class _ProfileActionsSheet extends StatelessWidget {
           if (!isActive)
             _ActionTile(
                 t: t, label: 'Переключиться', onTap: onSwitch),
+          if (onRefresh != null)
+            _ActionTile(t: t, label: 'Обновить', onTap: onRefresh!),
           _ActionTile(t: t, label: 'Переименовать', onTap: onRename),
           _ActionTile(
             t: t,
@@ -750,6 +807,29 @@ class _CheckBox extends StatelessWidget {
           ? Icon(Icons.check, size: 10, color: t.bg)
           : null,
     );
+  }
+}
+
+Future<(ProfileBundle?, String, String?)> _parseProfileInput(String input) async {
+  try {
+    final trimmed = input.trim();
+    final deeplinkResult = DeeplinkRouter.parse(trimmed);
+    if (deeplinkResult != null && deeplinkResult.type == DeeplinkType.profile) {
+      if (deeplinkResult.source == DeeplinkSource.data) {
+        return (deeplinkResult.profileBundle, '', deeplinkResult.effectiveSourceUrl);
+      }
+      if (deeplinkResult.source == DeeplinkSource.url) {
+        final fetched = await DeeplinkRouter.fetchFromUrl(deeplinkResult);
+        if (fetched is ProfileBundle) return (fetched, '', deeplinkResult.effectiveSourceUrl);
+        return (null, 'Не удалось загрузить данные по ссылке', null);
+      }
+    }
+    final json = jsonDecode(trimmed) as Map<String, dynamic>;
+    return (ProfileBundle.fromJson(json), '', null);
+  } on FormatException catch (e) {
+    return (null, 'JSON: ${e.message}', null);
+  } catch (e) {
+    return (null, '$e', null);
   }
 }
 

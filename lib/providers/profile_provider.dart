@@ -1,10 +1,11 @@
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/models/profile.dart';
 import '../core/models/profile_bundle.dart';
+import '../core/models/connections_bundle.dart';
 import '../core/services/profile_storage_service.dart';
 import '../core/services/settings_service.dart';
-import '../core/services/config_storage_service.dart' show ConfigStorageService;
 import 'settings_provider.dart';
 import 'config_provider.dart';
 
@@ -42,13 +43,11 @@ class ProfileNotifier extends AsyncNotifier<ProfileState> {
 
     if (profiles.isEmpty) {
       final settings = await SettingsService().load();
-      final configId = await ConfigStorageService().loadActiveConfigId();
       final defaultProfile = Profile(
         id: 'default',
         name: 'По умолчанию',
         isDefault: true,
         settings: settings,
-        activeConfigId: configId,
         createdAt: DateTime.now(),
       );
       profiles = [defaultProfile];
@@ -71,12 +70,10 @@ class ProfileNotifier extends AsyncNotifier<ProfileState> {
     final profile = current.profiles.firstWhere((p) => p.id == id);
 
     await SettingsService().save(profile.settings);
-    await ConfigStorageService().saveActiveConfigId(profile.activeConfigId);
     await _storage.saveActiveProfileId(id);
 
     state = AsyncData(current.copyWith(activeProfileId: id));
     ref.invalidate(settingsProvider);
-    ref.invalidate(configProvider);
   }
 
   Future<void> createProfile(String name, {bool copyFromCurrent = true}) async {
@@ -87,17 +84,12 @@ class ProfileNotifier extends AsyncNotifier<ProfileState> {
         ? (ref.read(settingsProvider).maybeWhen(
             data: (d) => d, orElse: () => null) ?? const AppSettings())
         : const AppSettings();
-    final activeConfigId = copyFromCurrent
-        ? ref.read(configProvider).maybeWhen(
-            data: (d) => d.activeConfigId, orElse: () => null)
-        : null;
 
     final id = 'profile_${DateTime.now().millisecondsSinceEpoch}';
     final profile = Profile(
       id: id,
       name: name,
       settings: settings,
-      activeConfigId: activeConfigId,
       createdAt: DateTime.now(),
     );
 
@@ -168,6 +160,7 @@ class ProfileNotifier extends AsyncNotifier<ProfileState> {
     ProfileBundle bundle, {
     bool switchToProfile = true,
     bool makeReadonly = false,
+    String? sourceUrl,
   }) async {
     final current = _current;
     if (current == null) return null;
@@ -179,30 +172,72 @@ class ProfileNotifier extends AsyncNotifier<ProfileState> {
       isDefault: false,
       readonly: makeReadonly,
       settings: bundle.profile.settings,
-      activeConfigId: bundle.profile.activeConfigId,
       createdAt: DateTime.now(),
+      sourceUrl: sourceUrl ?? bundle.sourceUrl,
+      lastFetchedAt: sourceUrl != null ? DateTime.now() : bundle.profile.lastFetchedAt,
     );
 
     final profiles = [...current.profiles, profile];
     await _storage.saveProfiles(profiles);
     state = AsyncData(current.copyWith(profiles: profiles));
 
+    if (bundle.hasConnections) {
+      await ref.read(configProvider.notifier).importBundle(ConnectionsBundle(
+        exportedAt: bundle.exportedAt,
+        configs: bundle.configs ?? [],
+        subscriptions: bundle.subscriptions ?? [],
+      ));
+    }
+
     if (switchToProfile) await switchProfile(newId);
     return newId;
   }
 
-  static ProfileBundle? tryParseBundle(String input) {
+  Future<String?> refreshProfile(String profileId, String url) async {
+    final current = _current;
+    if (current == null) return null;
+
+    ProfileBundle bundle;
     try {
-      final trimmed = input.trim();
-      if (trimmed.startsWith('teapod://import?data=')) {
-        final data = Uri.parse(trimmed).queryParameters['data']!;
-        return ProfileBundle.fromBase64(data);
-      }
-      return ProfileBundle.fromJson(
-          jsonDecode(trimmed) as Map<String, dynamic>);
-    } catch (_) {
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 15));
+      if (response.statusCode != 200) return null;
+
+      bundle = ProfileBundle.fromJson(
+          jsonDecode(response.body) as Map<String, dynamic>);
+    } catch (e) {
       return null;
     }
+
+    final existingIdx = current.profiles.indexWhere((p) => p.id == profileId);
+    if (existingIdx < 0) return null;
+
+    final existing = current.profiles[existingIdx];
+    final updated = existing.copyWith(
+      name: bundle.profile.name,
+      settings: bundle.profile.settings,
+      lastFetchedAt: DateTime.now(),
+    );
+
+    final profiles = [...current.profiles];
+    profiles[existingIdx] = updated;
+    await _storage.saveProfiles(profiles);
+    state = AsyncData(current.copyWith(profiles: profiles));
+
+    if (bundle.hasConnections) {
+      await ref.read(configProvider.notifier).importBundle(ConnectionsBundle(
+        exportedAt: bundle.exportedAt,
+        configs: bundle.configs ?? [],
+        subscriptions: bundle.subscriptions ?? [],
+      ));
+    }
+
+    // If this is the active profile, apply its settings
+    if (profileId == current.activeProfileId) {
+      await SettingsService().save(updated.settings);
+      ref.invalidate(settingsProvider);
+    }
+
+    return profileId;
   }
 }
 

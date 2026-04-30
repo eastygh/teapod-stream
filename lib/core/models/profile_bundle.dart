@@ -11,6 +11,7 @@ class ProfileBundle {
   final Profile profile;
   final List<VpnConfig>? configs;
   final List<Subscription>? subscriptions;
+  final String? sourceUrl;
 
   const ProfileBundle({
     this.version = currentVersion,
@@ -18,6 +19,7 @@ class ProfileBundle {
     required this.profile,
     this.configs,
     this.subscriptions,
+    this.sourceUrl,
   });
 
   Map<String, dynamic> toJson() => {
@@ -27,6 +29,7 @@ class ProfileBundle {
         if (configs != null) 'configs': configs!.map((c) => c.toJson()).toList(),
         if (subscriptions != null)
           'subscriptions': subscriptions!.map((s) => s.toJson()).toList(),
+        if (sourceUrl != null) 'sourceUrl': sourceUrl,
       };
 
   factory ProfileBundle.fromJson(Map<String, dynamic> json) => ProfileBundle(
@@ -39,6 +42,7 @@ class ProfileBundle {
         subscriptions: (json['subscriptions'] as List<dynamic>?)
             ?.map((e) => Subscription.fromJson(e as Map<String, dynamic>))
             .toList(),
+        sourceUrl: json['sourceUrl'] as String?,
       );
 
   String toBase64() {
@@ -52,7 +56,7 @@ class ProfileBundle {
     return ProfileBundle.fromJson(jsonDecode(json) as Map<String, dynamic>);
   }
 
-  String toDeeplink() => 'teapod://import?data=${toBase64()}';
+  String toDeeplink() => 'teapod://import/profile?data=${toBase64()}';
 
   bool get hasConnections =>
       (configs?.isNotEmpty ?? false) || (subscriptions?.isNotEmpty ?? false);
