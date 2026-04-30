@@ -65,7 +65,20 @@ class XrayVpnService : VpnService() {
 
         // Static state tracker for querying from Dart
         @Volatile private var currentNativeState: String = "disconnected"
-        @JvmStatic fun getNativeState(): String = currentNativeState
+        // Tracks whether we are in TUN mode (not proxy-only). Used by getNativeState() to detect
+        // a TUN fd closed externally (e.g. during a phone call) without onRevoke() being called.
+        @Volatile private var tunModeActive = false
+
+        @JvmStatic fun getNativeState(): String {
+            // If the native state claims "connected" in TUN mode but tun2socks is no longer running,
+            // the TUN fd was likely closed externally (e.g. system network change during a phone call)
+            // without onRevoke() being called. Correct the stale state proactively so that
+            // syncNativeState() in Flutter reflects reality instead of showing a phantom connection.
+            if (currentNativeState == "connected" && tunModeActive && !Teapodcore.isTunRunning()) {
+                currentNativeState = "disconnected"
+            }
+            return currentNativeState
+        }
 
         // Set true on explicit user disconnect, false on connect — guards reconnectInternal()
         val userRequestedDisconnect = AtomicBoolean(false)
@@ -473,6 +486,7 @@ class XrayVpnService : VpnService() {
         try { tunInterface?.close() } catch (_: Exception) {}
         tunInterface = null
         killSwitchEnabled = killSwitch
+        tunModeActive = !proxyOnly
         allowIcmpEnabled = allowIcmp
         proxyOnlyMode = proxyOnly
         setState("connecting")
@@ -739,6 +753,10 @@ class XrayVpnService : VpnService() {
     override fun onRevoke() {
         // Вызывается Android, когда VPN отключен извне (системные настройки, другой VPN)
         log("info", "VPN revoked by system")
+        // Prevent START_STICKY auto-reconnect while the user is e.g. on a phone call.
+        // The user did not request disconnect, but we must not reconnect until they explicitly
+        // connect again — VPN permission may be temporarily revoked by the system.
+        userRequestedDisconnect.set(true)
         stopVpn(explicit = true)
         // Force state update in case stopVpn returned early (isRunning was already false
         // during a reconnect cycle when the user tapped the system VPN popup).
@@ -764,6 +782,7 @@ class XrayVpnService : VpnService() {
     ) {
         if (!isRunning.compareAndSet(true, false)) return  // idempotent — safe to call multiple times
         stopHeartbeat()
+        tunModeActive = false
         lastUnderlyingNetwork = null
         pendingNetworkRunnable?.let { networkChangeHandler.removeCallbacks(it) }
         pendingNetworkRunnable = null
