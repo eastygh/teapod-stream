@@ -6,8 +6,9 @@ class Profile {
   final bool isDefault;
   final bool readonly;
   final AppSettings settings;
-  final String? activeConfigId;
   final DateTime createdAt;
+  final String? sourceUrl;
+  final DateTime? lastFetchedAt;
 
   const Profile({
     required this.id,
@@ -15,16 +16,17 @@ class Profile {
     this.isDefault = false,
     this.readonly = false,
     required this.settings,
-    this.activeConfigId,
     required this.createdAt,
+    this.sourceUrl,
+    this.lastFetchedAt,
   });
 
   Profile copyWith({
     String? name,
     bool? readonly,
     AppSettings? settings,
-    String? activeConfigId,
-    bool clearActiveConfig = false,
+    String? sourceUrl,
+    DateTime? lastFetchedAt,
   }) =>
       Profile(
         id: id,
@@ -32,8 +34,9 @@ class Profile {
         isDefault: isDefault,
         readonly: readonly ?? this.readonly,
         settings: settings ?? this.settings,
-        activeConfigId: clearActiveConfig ? null : (activeConfigId ?? this.activeConfigId),
         createdAt: createdAt,
+        sourceUrl: sourceUrl ?? this.sourceUrl,
+        lastFetchedAt: lastFetchedAt ?? this.lastFetchedAt,
       );
 
   Map<String, dynamic> toJson() => {
@@ -42,8 +45,9 @@ class Profile {
         'isDefault': isDefault,
         'readonly': readonly,
         'settings': settings.toJson(),
-        'activeConfigId': activeConfigId,
         'createdAt': createdAt.toIso8601String(),
+        if (sourceUrl != null) 'sourceUrl': sourceUrl,
+        if (lastFetchedAt != null) 'lastFetchedAt': lastFetchedAt!.toIso8601String(),
       };
 
   factory Profile.fromJson(Map<String, dynamic> json) => Profile(
@@ -53,7 +57,12 @@ class Profile {
         readonly: json['readonly'] as bool? ?? false,
         settings: AppSettings.fromJson(
             json['settings'] as Map<String, dynamic>? ?? {}),
-        activeConfigId: json['activeConfigId'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
+        sourceUrl: json['sourceUrl'] as String?,
+        lastFetchedAt: json['lastFetchedAt'] != null
+            ? DateTime.parse(json['lastFetchedAt'] as String)
+            : null,
       );
+
+  bool get isFromUrl => sourceUrl != null;
 }

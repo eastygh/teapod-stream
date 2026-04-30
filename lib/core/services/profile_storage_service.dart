@@ -40,15 +40,4 @@ class ProfileStorageService {
       await saveProfiles(profiles);
     }
   }
-
-  Future<void> updateProfileActiveConfig(String profileId, String? configId) async {
-    final profiles = await loadProfiles();
-    final idx = profiles.indexWhere((p) => p.id == profileId);
-    if (idx >= 0) {
-      profiles[idx] = configId == null
-          ? profiles[idx].copyWith(clearActiveConfig: true)
-          : profiles[idx].copyWith(activeConfigId: configId);
-      await saveProfiles(profiles);
-    }
-  }
 }

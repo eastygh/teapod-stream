@@ -43,6 +43,13 @@
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES"/>
             </intent-filter>
+            <!-- Deeplink: teapod://import/* -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="teapod" android:host="import" android:pathPrefix="/" />
+            </intent-filter>
         </activity>
 
         <!-- Xray VPN Service -->

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,6 +15,7 @@ import 'core/services/settings_service.dart';
 import 'providers/settings_provider.dart';
 import 'providers/update_provider.dart';
 import 'providers/theme_provider.dart';
+import 'core/services/deeplink_handler.dart';
 
 class TeapodApp extends StatelessWidget {
   const TeapodApp({super.key});
@@ -67,6 +69,9 @@ class _AppShellState extends ConsumerState<_AppShell>
     with WidgetsBindingObserver {
   int _currentIndex = 0;
   bool _autoConnectAttempted = false;
+  StreamSubscription? _deeplinkSubscription;
+
+  static const _eventChannel = EventChannel('com.teapodstream/vpn/events');
 
   static const _pages = [
     HomeScreen(),
@@ -86,10 +91,15 @@ class _AppShellState extends ConsumerState<_AppShell>
       _tryAutoConnect();
       _scheduleUpdateCheck();
     });
+
+    _deeplinkSubscription = _eventChannel
+        .receiveBroadcastStream()
+        .listen(_handleEvent);
   }
 
   @override
   void dispose() {
+    _deeplinkSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -119,6 +129,15 @@ class _AppShellState extends ConsumerState<_AppShell>
     if (!vpnState.isConnected && !vpnState.isConnecting) {
       await ref.read(vpnProvider.notifier).connect();
     }
+  }
+
+  void _handleEvent(dynamic event) {
+    if (event is! Map) return;
+    final type = event['type'];
+    if (type != 'deeplink') return;
+    final uri = event['uri'] as String?;
+    if (uri == null || !mounted) return;
+    DeeplinkHandler(context, ref).handleUri(uri);
   }
 
   @override
