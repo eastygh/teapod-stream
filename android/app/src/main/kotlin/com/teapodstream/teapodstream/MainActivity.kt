@@ -313,7 +313,7 @@ class MainActivity : FlutterActivity() {
         proxyOnly: Boolean = false,
         showNotification: Boolean = true,
         killSwitch: Boolean = false,
-        allowIcmp: Boolean = true,
+        allowIcmp: Boolean = false,
     ) {
         requestBatteryOptimizationExemption()
         val intent = Intent(this, XrayVpnService::class.java).apply {
