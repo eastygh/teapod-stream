@@ -59,10 +59,10 @@ void main() {
       expect(tags, containsAll(['proxy', 'direct', 'dns-out']));
     });
 
-    test('routing domainStrategy is IPIfNonMatch', () {
+    test('routing domainStrategy is AsIs', () {
       final json = XrayConfigBuilder.build(_vlessConfig(), _defaultOptions());
       final routing = json['routing'] as Map<String, dynamic>;
-      expect(routing['domainStrategy'], 'IPIfNonMatch');
+      expect(routing['domainStrategy'], 'AsIs');
     });
 
     group('sniffing routeOnly', () {

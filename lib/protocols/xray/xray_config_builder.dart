@@ -51,9 +51,11 @@ class XrayConfigBuilder {
         'domainStrategy': 'AsIs',
         'rules': [
           if (options.dnsMode == DnsMode.proxy) ...[
-            // Proxy mode: intercept DNS via xray's DNS module → queries go through VPN
+            // Proxy mode: intercept DNS queries from the user and handle them via xray's DNS module.
+            // We only match socks-in to avoid loops when the DNS module sends its own queries.
             {
               'type': 'field',
+              'inboundTag': ['socks-in'],
               'port': '53',
               'network': 'udp,tcp',
               'outboundTag': 'dns-out',
@@ -277,6 +279,26 @@ if (!routing.isActive) return rules;
   static String _networkName(VpnTransport t) =>
       t == VpnTransport.http2 ? 'h2' : t.name;
 
+  static List<String>? _formatPinSHA256(String? pin) {
+    if (pin == null || pin.isEmpty) return null;
+    try {
+      if (pin.contains(':')) {
+        final bytes = pin.split(':').map((e) => int.parse(e, radix: 16)).toList();
+        return [base64Encode(bytes)];
+      }
+      if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(pin)) {
+        final bytes = <int>[];
+        for (var i = 0; i < pin.length; i += 2) {
+          bytes.add(int.parse(pin.substring(i, i + 2), radix: 16));
+        }
+        return [base64Encode(bytes)];
+      }
+      return [pin];
+    } catch (_) {
+      return [pin];
+    }
+  }
+
   static Map<String, dynamic> _buildStreamSettings(VpnConfig config) {
     if (config.protocol == VpnProtocol.hysteria2) {
       return {
@@ -284,11 +306,18 @@ if (!routing.isActive) return rules;
         'security': 'tls',
         'tlsSettings': {
           'serverName': config.sni ?? '',
-          'allowInsecure': false,
+          'allowInsecure': config.allowInsecure,
+          if (config.pinSHA256 != null && config.pinSHA256!.isNotEmpty)
+            'pinnedPeerCertificateChainSha256': _formatPinSHA256(config.pinSHA256),
         },
         'hysteriaSettings': {
           'version': 2,
           'auth': config.password ?? '',
+          if (config.obfsPassword != null && config.obfsPassword!.isNotEmpty)
+            'obfs': {
+              'type': 'salamander',
+              'password': config.obfsPassword,
+            }
         },
       };
     }

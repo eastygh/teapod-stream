@@ -35,6 +35,8 @@ class VpnConfig {
   final String? subscriptionId; // ID of the subscription this config came from
   final String? ssPrefix; // hex-encoded prefix bytes for Outline Shadowsocks (e.g. "160301...")
   final String? obfsPassword; // for Hysteria2 salamander obfuscation
+  final bool allowInsecure;
+  final String? pinSHA256;
   final String? xhttpMode; // for xhttp transport: "auto", "packet-up", "stream-up", "stream-one"
   final Map<String, dynamic>? xhttpExtra; // raw extra object passed to xhttpSettings
 
@@ -67,6 +69,8 @@ class VpnConfig {
     this.subscriptionId,
     this.ssPrefix,
     this.obfsPassword,
+    this.allowInsecure = false,
+    this.pinSHA256,
     this.xhttpMode,
     this.xhttpExtra,
   });
@@ -88,6 +92,8 @@ class VpnConfig {
     String? name,
     int? latencyMs,
     String? subscriptionId,
+    bool? allowInsecure,
+    String? pinSHA256,
     String? rawUri,
   }) {
     return VpnConfig(
@@ -119,6 +125,8 @@ class VpnConfig {
       subscriptionId: subscriptionId ?? this.subscriptionId,
       ssPrefix: ssPrefix,
       obfsPassword: obfsPassword,
+      allowInsecure: allowInsecure ?? this.allowInsecure,
+      pinSHA256: pinSHA256 ?? this.pinSHA256,
       xhttpMode: xhttpMode,
       xhttpExtra: xhttpExtra,
     );
@@ -153,6 +161,8 @@ class VpnConfig {
         'subscriptionId': subscriptionId,
         'ssPrefix': ssPrefix,
         'obfsPassword': obfsPassword,
+        'allowInsecure': allowInsecure,
+        'pinSHA256': pinSHA256,
         'xhttpMode': xhttpMode,
         'xhttpExtra': xhttpExtra,
       };
@@ -195,6 +205,8 @@ class VpnConfig {
         subscriptionId: json['subscriptionId'] as String?,
         ssPrefix: json['ssPrefix'] as String?,
         obfsPassword: json['obfsPassword'] as String?,
+        allowInsecure: json['allowInsecure'] as bool? ?? false,
+        pinSHA256: json['pinSHA256'] as String?,
         xhttpMode: json['xhttpMode'] as String?,
         xhttpExtra: json['xhttpExtra'] as Map<String, dynamic>?,
       );

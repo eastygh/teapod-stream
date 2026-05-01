@@ -56,6 +56,8 @@ class VlessParser {
 
       final security = _parseSecurity(params['security'] ?? 'none');
       final transport = _parseTransport(params['type'] ?? 'tcp');
+      final allowInsecure = _parseInsecure(params);
+      final pinSHA256 = params['pinSHA256'];
 
       return VpnConfig(
         id: const Uuid().v4(),
@@ -66,6 +68,8 @@ class VlessParser {
         uuid: userInfo,
         security: security,
         transport: transport,
+        allowInsecure: allowInsecure,
+        pinSHA256: pinSHA256,
         sni: params['sni'] ?? params['serverName'],
         wsPath: Uri.decodeComponent(params['path'] ?? '/'),
         wsHost: params['host'],
@@ -297,6 +301,8 @@ class VlessParser {
       final obfs = params['obfs'];
       final obfsPassword =
           obfs == 'salamander' ? params['obfs-password'] : null;
+      final allowInsecure = _parseInsecure(params);
+      final pinSHA256 = params['pinSHA256'];
 
       return VpnConfig(
         id: const Uuid().v4(),
@@ -308,6 +314,8 @@ class VlessParser {
         password: password,
         security: VpnSecurity.tls,
         transport: VpnTransport.tcp,
+        allowInsecure: allowInsecure,
+        pinSHA256: pinSHA256,
         sni: params['sni'],
         obfsPassword: obfsPassword,
         createdAt: DateTime.now(),
@@ -316,6 +324,11 @@ class VlessParser {
     } catch (e) {
       return null;
     }
+  }
+
+  static bool _parseInsecure(Map<String, String> params) {
+    final val = params['allowInsecure'] ?? params['insecure'];
+    return val == '1' || val == 'true';
   }
 
   static (String, int) _parseHostPort(String hostPort, int defaultPort) {
