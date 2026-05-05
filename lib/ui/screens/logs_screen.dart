@@ -1,8 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../core/models/vpn_log_entry.dart';
 import '../../core/services/log_service.dart';
+import '../../providers/vpn_provider.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/hero_panel.dart';
@@ -52,16 +55,26 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
     }
   }
 
-  Future<void> _copyToClipboard(List<VpnLogEntry> logs) async {
-    final text = logs
-        .map((e) => '[${_fmtTs(e.timestamp)}] [${_lvlTag(e.level)}] ${e.message}')
-        .join('\n');
-    await Clipboard.setData(ClipboardData(text: text));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Логи скопированы'), duration: Duration(seconds: 2)),
-      );
+  Future<void> _exportLogs() async {
+    final srcPath = await ref.read(vpnProvider.notifier).getLogFilePath();
+    if (srcPath == null) return;
+    final src = File(srcPath);
+    if (!src.existsSync() || src.lengthSync() == 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Лог пуст'), duration: Duration(seconds: 2)),
+        );
+      }
+      return;
     }
+    // Copy to cache dir — share_plus requires files in a shareable location
+    final now = DateTime.now();
+    final name = 'teapod_'
+        '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}'
+        '_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}.txt';
+    final tmp = File('${(await getTemporaryDirectory()).path}/$name');
+    await src.copy(tmp.path);
+    await Share.shareXFiles([XFile(tmp.path, mimeType: 'text/plain')], subject: 'TeapodStream Log');
   }
 
   Color _lvlColor(LogLevel lvl, TeapodTokens t) => switch (lvl) {
@@ -140,14 +153,17 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
                 children: [
                   _IconBtn(
                     t: t,
-                    icon: Icons.copy_rounded,
-                    onTap: logs.isEmpty ? null : () => _copyToClipboard(filtered),
+                    icon: Icons.upload_file_rounded,
+                    onTap: _exportLogs,
                   ),
                   const SizedBox(width: 6),
                   _IconBtn(
                     t: t,
                     icon: Icons.delete_sweep_rounded,
-                    onTap: () => ref.read(logServiceProvider.notifier).clear(),
+                    onTap: () {
+                      ref.read(logServiceProvider.notifier).clear();
+                      ref.read(vpnProvider.notifier).clearNativeLogs();
+                    },
                   ),
                 ],
               ),

@@ -189,14 +189,42 @@ class MainActivity : FlutterActivity() {
                         val socks = if (state == "connected") {
                             XrayVpnService.getSocksCredentials()
                         } else {
-                            mapOf("port" to 0, "user" to "", "password" to "")
+                            mapOf("port" to 0, "user" to "", "password" to "", "connectedAtMs" to 0L)
                         }
                         result.success(mapOf(
                             "state" to state,
                             "socksPort" to socks["port"],
                             "socksUser" to socks["user"],
-                            "socksPassword" to socks["password"]
+                            "socksPassword" to socks["password"],
+                            "connectedAtMs" to socks["connectedAtMs"],
                         ))
+                    }
+
+                    "getLogFilePath" -> {
+                        result.success("${filesDir.absolutePath}/${XrayVpnService.LOG_FILE_NAME}")
+                    }
+
+                    "getLogs" -> {
+                        Thread {
+                            val file = java.io.File(filesDir, XrayVpnService.LOG_FILE_NAME)
+                            val lines = if (file.exists()) {
+                                synchronized(XrayVpnService.LOG_FILE_LOCK) {
+                                    file.readLines().filter { it.isNotBlank() }
+                                }
+                            } else emptyList()
+                            runOnUiThread { result.success(lines) }
+                        }.start()
+                    }
+
+                    "clearLogs" -> {
+                        Thread {
+                            try {
+                                synchronized(XrayVpnService.LOG_FILE_LOCK) {
+                                    java.io.File(filesDir, XrayVpnService.LOG_FILE_NAME).writeText("")
+                                }
+                            } catch (_: Exception) {}
+                            runOnUiThread { result.success(null) }
+                        }.start()
                     }
 
                     "getStatsHistory" -> {

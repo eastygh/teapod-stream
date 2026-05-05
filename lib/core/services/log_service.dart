@@ -15,6 +15,12 @@ class _CircularBuffer {
     if (_count < _buffer.length) _count++;
   }
 
+  void clear() {
+    _head = 0;
+    _count = 0;
+    _buffer.fillRange(0, _buffer.length, null);
+  }
+
   List<VpnLogEntry> toList() {
     if (_count < _buffer.length) {
       return _buffer.whereType<VpnLogEntry>().toList();
@@ -49,8 +55,16 @@ class LogService extends Notifier<List<VpnLogEntry>> {
   void addDebug(String message, {String? source}) =>
       add(VpnLogEntry.debug(message, source: source));
 
+  void loadFromEntries(List<VpnLogEntry> entries) {
+    _buffer.clear();
+    for (final e in entries) {
+      _buffer.add(e);
+    }
+    state = _buffer.toList();
+  }
+
   void clear() {
-    _buffer = _CircularBuffer(AppConstants.maxLogEntries);
+    _buffer.clear();
     state = [];
   }
 }

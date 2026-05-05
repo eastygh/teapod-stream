@@ -92,10 +92,18 @@ class XrayVpnService : VpnService() {
         val activeSocksUser: String get() = _socksCredentials.get().user
         val activeSocksPassword: String get() = _socksCredentials.get().password
 
+        // Epoch-ms when VPN became connected; 0 when disconnected. Survives UI restarts because
+        // the foreground service process stays alive. Flutter uses this to restore the timer.
+        @Volatile var connectedAtMs: Long = 0
+            private set
+
         @JvmStatic fun getSocksCredentials(): Map<String, Any> {
             val c = _socksCredentials.get()
-            return mapOf("port" to c.port, "user" to c.user, "password" to c.password)
+            return mapOf("port" to c.port, "user" to c.user, "password" to c.password, "connectedAtMs" to connectedAtMs)
         }
+
+        const val LOG_FILE_NAME = "vpn_log.txt"
+        val LOG_FILE_LOCK = Any()
 
         private const val NOTIFICATION_CHANNEL_ID = "vpn_service"
         private const val NOTIFICATION_CHANNEL_MINIMAL_ID = "vpn_service_minimal"
@@ -495,6 +503,7 @@ class XrayVpnService : VpnService() {
         tunModeActive = !proxyOnly
         allowIcmpEnabled = allowIcmp
         proxyOnlyMode = proxyOnly
+        if (!isReconnect) clearLogFile()
         setState("connecting")
         log("info", "Starting VPN (MTU: $tunMtu)")
 
@@ -869,6 +878,7 @@ class XrayVpnService : VpnService() {
         } finally {
             // Don't overwrite "connecting" state when doing internal reconnect
             if (!reconnecting) {
+                connectedAtMs = 0
                 setState(resultState)
             } else {
                 // Clear credentials so startVpn picks up fresh ones from configFile
@@ -1353,6 +1363,7 @@ class XrayVpnService : VpnService() {
 
     private fun setConnected(socksPort: Int, socksUser: String, socksPassword: String) {
         currentNativeState = "connected"
+        connectedAtMs = System.currentTimeMillis()
         _socksCredentials.set(SocksCredentials(socksPort, socksUser, socksPassword))
         // Save credentials to file for CONNECT_QUICK reconnect
         try {
@@ -1377,11 +1388,29 @@ class XrayVpnService : VpnService() {
 
     private fun log(level: String, message: String) {
         android.util.Log.i("TeapodVPN", "[$level] $message")
-        // Send logs to Flutter UI (all levels except debug in release)
         if (level != "debug" || BuildConfig.DEBUG) {
             VpnEventStreamHandler.sendLogEvent(level, message)
+            appendLogLine(level, message)
         }
     }
+
+    private fun appendLogLine(level: String, message: String) {
+        try {
+            val line = "${System.currentTimeMillis()}|$level|${message.replace("\n", " ")}\n"
+            synchronized(LOG_FILE_LOCK) {
+                java.io.FileWriter(File(filesDir, LOG_FILE_NAME), true).use { it.write(line) }
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun clearLogFile() {
+        try {
+            synchronized(LOG_FILE_LOCK) {
+                File(filesDir, LOG_FILE_NAME).writeText("")
+            }
+        } catch (_: Exception) {}
+    }
+
 
     private fun subnetMaskToPrefix(mask: String): Int {
         val parts = mask.split(".").map { it.toInt() }

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/interfaces/vpn_engine.dart';
 import '../../core/models/vpn_config.dart';
+import '../../core/models/vpn_log_entry.dart';
 import 'xray_config_builder.dart';
 
 /// XrayEngine is a thin MethodChannel client — it sends commands to the native
@@ -79,7 +80,7 @@ class XrayEngine implements VpnEngine {
   }
 
   /// Get current VPN state with SOCKS credentials (for sync on app start).
-  Future<({VpnState state, int socksPort, String socksUser, String socksPassword})>
+  Future<({VpnState state, int socksPort, String socksUser, String socksPassword, int connectedAtMs})>
       getVpnState() async {
     try {
       final result =
@@ -91,10 +92,56 @@ class XrayEngine implements VpnEngine {
           socksPort: result['socksPort'] as int? ?? 0,
           socksUser: result['socksUser'] as String? ?? '',
           socksPassword: result['socksPassword'] as String? ?? '',
+          connectedAtMs: (result['connectedAtMs'] as num?)?.toInt() ?? 0,
         );
       }
     } catch (_) {}
-    return (state: VpnState.disconnected, socksPort: 0, socksUser: '', socksPassword: '');
+    return (state: VpnState.disconnected, socksPort: 0, socksUser: '', socksPassword: '', connectedAtMs: 0);
+  }
+
+  /// Returns the absolute path to the native log file (filesDir/vpn_log.txt).
+  Future<String?> getLogFilePath() async {
+    try {
+      return await _channel.invokeMethod<String>('getLogFilePath');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Read persisted log file from native filesDir.
+  Future<List<VpnLogEntry>> getLogs() async {
+    try {
+      final lines = await _channel.invokeMethod<List<Object?>>('getLogs');
+      if (lines == null) return [];
+      return lines.whereType<String>().map((line) {
+        final idx1 = line.indexOf('|');
+        final idx2 = line.indexOf('|', idx1 + 1);
+        if (idx1 < 0 || idx2 < 0) return null;
+        final ts = int.tryParse(line.substring(0, idx1));
+        if (ts == null) return null;
+        final levelStr = line.substring(idx1 + 1, idx2);
+        final message = line.substring(idx2 + 1);
+        final level = LogLevel.values.firstWhere(
+          (e) => e.name == levelStr,
+          orElse: () => LogLevel.info,
+        );
+        return VpnLogEntry(
+          timestamp: DateTime.fromMillisecondsSinceEpoch(ts),
+          level: level,
+          message: message,
+          source: 'xray',
+        );
+      }).whereType<VpnLogEntry>().toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Clear the persisted log file on native side.
+  Future<void> clearLogs() async {
+    try {
+      await _channel.invokeMethod<void>('clearLogs');
+    } catch (_) {}
   }
 
   /// Get current stats (for background polling).

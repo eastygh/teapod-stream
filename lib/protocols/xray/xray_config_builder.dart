@@ -68,7 +68,7 @@ class XrayConfigBuilder {
           {
             'type': 'field',
             'inboundTag': ['socks-in'],
-            'outboundTag': 'proxy',
+            'outboundTag': routing.direction == RoutingDirection.onlySelected ? 'direct' : 'proxy',
           }
         ],
       },
@@ -98,8 +98,6 @@ class XrayConfigBuilder {
     if (routing.bypassLocal) {
       rules.add({'type': 'field', 'ip': ['geoip:private'], 'outboundTag': 'direct'});
     }
-
-if (!routing.isActive) return rules;
 
     if (!routing.geoEnabled && !routing.domainEnabled && !routing.geositeEnabled) return rules;
 

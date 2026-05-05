@@ -94,12 +94,20 @@ class VpnNotifier extends Notifier<VpnState2> {
     Future.microtask(() async {
       final vpnState = await _engine.getVpnState();
       if (vpnState.state == VpnState.connected && vpnState.socksPort > 0) {
+        if (vpnState.connectedAtMs > 0) {
+          _connectedAt = DateTime.fromMillisecondsSinceEpoch(vpnState.connectedAtMs);
+        }
         state = VpnState2(
           connectionState: VpnState.connected,
           activeSocksPort: vpnState.socksPort,
           activeSocksUser: vpnState.socksUser,
           activeSocksPassword: vpnState.socksPassword,
         );
+        // Restore log history from persisted file
+        final logEntries = await _engine.getLogs();
+        if (logEntries.isNotEmpty) {
+          ref.read(logServiceProvider.notifier).loadFromEntries(logEntries);
+        }
         // ipInfoProvider is AsyncNotifier, needs refresh to rebuild
         // ignore: unused_result
         ref.refresh(ipInfoProvider);
@@ -147,6 +155,10 @@ class VpnNotifier extends Notifier<VpnState2> {
           if (port != null && port > 0) {
             final user = event['socksUser'] as String? ?? '';
             final pass = event['socksPassword'] as String? ?? '';
+            final connectedAtMs = (event['connectedAtMs'] as num?)?.toInt() ?? 0;
+            if (connectedAtMs > 0) {
+              _connectedAt ??= DateTime.fromMillisecondsSinceEpoch(connectedAtMs);
+            }
             state = state.copyWith(
               activeSocksPort: port,
               activeSocksUser: user,
@@ -444,6 +456,10 @@ class VpnNotifier extends Notifier<VpnState2> {
       await ref.read(configProvider.notifier).updateConfig(updated);
     }
   }
+
+  Future<String?> getLogFilePath() => _engine.getLogFilePath();
+
+  Future<void> clearNativeLogs() => _engine.clearLogs();
 
   VpnState get connectionState => state.connectionState;
 }
