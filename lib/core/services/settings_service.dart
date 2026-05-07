@@ -15,6 +15,30 @@ enum VpnMode {
 
 enum FontScale { normal, large }
 
+class GeoPresets {
+  static const _lsGeoip    = 'https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat';
+  static const _lsGeosite  = 'https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat';
+  static const _rfGeoip    = 'https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geoip.dat';
+  static const _rfGeosite  = 'https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geosite.dat';
+  static const _v2Geoip    = 'https://github.com/v2fly/geoip/releases/latest/download/geoip.dat';
+  static const _v2Geosite  = 'https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat';
+
+  static const defaultGeoipUrl    = _lsGeoip;
+  static const defaultGeositeUrl  = _lsGeosite;
+
+  static const loyalsoldier = (name: 'Loyalsoldier', geoipUrl: _lsGeoip,  geositeUrl: _lsGeosite);
+  static const runetfreedom = (name: 'runetfreedom', geoipUrl: _rfGeoip,  geositeUrl: _rfGeosite);
+  static const v2fly         = (name: 'v2fly',        geoipUrl: _v2Geoip,  geositeUrl: _v2Geosite);
+  static final all = [loyalsoldier, runetfreedom, v2fly];
+
+  static String nameOf(String geoipUrl, String geositeUrl) {
+    for (final p in all) {
+      if (p.geoipUrl == geoipUrl && p.geositeUrl == geositeUrl) return p.name;
+    }
+    return 'custom';
+  }
+}
+
 class AppSettings {
   final int socksPort;
   final LogLevel logLevel;
@@ -40,6 +64,10 @@ class AppSettings {
   final RoutingSettings routing;
   final UpdateChannel updateChannel;
   final FontScale fontScale;
+  final String geoipUrl;
+  final String geositeUrl;
+  final bool sniffingEnabled;
+  final int mtu;
 
   const AppSettings({
     this.socksPort = AppConstants.defaultSocksPort,
@@ -66,6 +94,10 @@ class AppSettings {
     this.routing = const RoutingSettings(),
     this.updateChannel = UpdateChannel.stable,
     this.fontScale = FontScale.normal,
+    this.geoipUrl = GeoPresets.defaultGeoipUrl,
+    this.geositeUrl = GeoPresets.defaultGeositeUrl,
+    this.sniffingEnabled = true,
+    this.mtu = 1500,
   });
 
   AppSettings copyWith({
@@ -93,6 +125,10 @@ class AppSettings {
     RoutingSettings? routing,
     UpdateChannel? updateChannel,
     FontScale? fontScale,
+    String? geoipUrl,
+    String? geositeUrl,
+    bool? sniffingEnabled,
+    int? mtu,
   }) {
     return AppSettings(
       socksPort: socksPort ?? this.socksPort,
@@ -119,6 +155,10 @@ class AppSettings {
       routing: routing ?? this.routing,
       updateChannel: updateChannel ?? this.updateChannel,
       fontScale: fontScale ?? this.fontScale,
+      geoipUrl: geoipUrl ?? this.geoipUrl,
+      geositeUrl: geositeUrl ?? this.geositeUrl,
+      sniffingEnabled: sniffingEnabled ?? this.sniffingEnabled,
+      mtu: mtu ?? this.mtu,
     );
   }
 
@@ -147,6 +187,10 @@ class AppSettings {
     'routing': routing.toJson(),
     'updateChannel': updateChannel.name,
     'fontScale': fontScale.name,
+    'geoipUrl': geoipUrl,
+    'geositeUrl': geositeUrl,
+    'sniffingEnabled': sniffingEnabled,
+    'mtu': mtu,
   };
 
   static AppSettings fromJson(Map<String, dynamic> json) {
@@ -181,6 +225,10 @@ class AppSettings {
         (e) => e.name == json['updateChannel'], orElse: () => UpdateChannel.stable),
       fontScale: FontScale.values.firstWhere(
         (e) => e.name == json['fontScale'], orElse: () => FontScale.normal),
+      geoipUrl: json['geoipUrl'] as String? ?? GeoPresets.defaultGeoipUrl,
+      geositeUrl: json['geositeUrl'] as String? ?? GeoPresets.defaultGeositeUrl,
+      sniffingEnabled: json['sniffingEnabled'] as bool? ?? true,
+      mtu: json['mtu'] as int? ?? 1500,
     );
   }
 
@@ -222,6 +270,8 @@ class SettingsService {
   static const _routingAdBlockEnabledKey = 'routing_adblock_enabled';
   static const _updateChannelKey = 'update_channel';
   static const _fontScaleKey = 'font_scale';
+  static const _sniffingEnabledKey = 'sniffing_enabled';
+  static const _mtuKey = 'mtu';
 
   final _secure = StorageSecureService();
 
@@ -271,6 +321,8 @@ class SettingsService {
         (e) => e.name == prefs.getString(_fontScaleKey),
         orElse: () => FontScale.normal,
       ),
+      sniffingEnabled: prefs.getBool(_sniffingEnabledKey) ?? true,
+      mtu: prefs.getInt(_mtuKey) ?? 1500,
     );
   }
 
@@ -325,6 +377,8 @@ class SettingsService {
     await prefs.setBool(_routingAdBlockEnabledKey, settings.routing.adBlockEnabled);
     await prefs.setString(_updateChannelKey, settings.updateChannel.name);
     await prefs.setString(_fontScaleKey, settings.fontScale.name);
+    await prefs.setBool(_sniffingEnabledKey, settings.sniffingEnabled);
+    await prefs.setInt(_mtuKey, settings.mtu);
     // SOCKS credentials go to encrypted storage
     await _secure.writeSocksCredentials(settings.socksUser, settings.socksPassword);
   }

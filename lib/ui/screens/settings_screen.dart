@@ -378,6 +378,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
   late final TextEditingController _socksPortCtrl;
   late final TextEditingController _socksUserCtrl;
   late final TextEditingController _socksPasswordCtrl;
+  late final TextEditingController _mtuCtrl;
 
   @override
   void initState() {
@@ -385,6 +386,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
     _socksPortCtrl    = TextEditingController(text: widget.settings.socksPort.toString());
     _socksUserCtrl    = TextEditingController(text: widget.settings.socksUser);
     _socksPasswordCtrl = TextEditingController(text: widget.settings.socksPassword);
+    _mtuCtrl          = TextEditingController(text: widget.settings.mtu.toString());
   }
 
   @override
@@ -392,6 +394,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
     _socksPortCtrl.dispose();
     _socksUserCtrl.dispose();
     _socksPasswordCtrl.dispose();
+    _mtuCtrl.dispose();
     super.dispose();
   }
 
@@ -407,6 +410,13 @@ class _SettingsBodyState extends State<_SettingsBody> {
       socksUser: _socksUserCtrl.text,
       socksPassword: _socksPasswordCtrl.text,
     ));
+  }
+
+  void _updateMtu() {
+    final mtu = int.tryParse(_mtuCtrl.text);
+    if (mtu != null) {
+      widget.onUpdate(widget.settings.copyWith(mtu: mtu.clamp(576, 9000)));
+    }
   }
 
   @override
@@ -561,6 +571,36 @@ class _SettingsBodyState extends State<_SettingsBody> {
             locked: locked,
             onChange: (v) => widget.onUpdate(s.copyWith(allowIcmp: v)),
           ),
+          if (!s.proxyOnly)
+            _InlineField(
+              t: t,
+              label: 'MTU',
+              child: SizedBox(
+                width: 90,
+                child: TextField(
+                  controller: _mtuCtrl,
+                  enabled: !locked,
+                  textAlign: TextAlign.center,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  onChanged: (_) => _updateMtu(),
+                  onEditingComplete: () => FocusScope.of(context).unfocus(),
+                  style: AppTheme.mono(size: 13, color: t.text),
+                  decoration: InputDecoration(
+                    hintText: '1500',
+                    hintStyle: AppTheme.mono(size: 12, color: t.textMuted),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    isDense: true,
+                    enabledBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: t.line), borderRadius: BorderRadius.zero),
+                    focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: t.accent), borderRadius: BorderRadius.zero),
+                    disabledBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: t.lineSoft), borderRadius: BorderRadius.zero),
+                  ),
+                ),
+              ),
+            ),
           // DNS mode inline selector
           Container(
             padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
@@ -673,6 +713,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
       ],
     );
   }
+
 }
 
 // ── Section header (0xNN · label) ────────────────────────────────

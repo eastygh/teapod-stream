@@ -124,14 +124,24 @@ class ConfigNotifier extends AsyncNotifier<ConfigState> {
       final oldConfigs = current.configs.where((c) => c.subscriptionId == subId).toList();
       // Preserve ping results by matching address:port
       final latencyMap = <String, int>{};
+      final pingTimeMap = <String, DateTime>{};
       for (final old in oldConfigs) {
-        if (old.latencyMs != null) latencyMap['${old.address}:${old.port}'] = old.latencyMs!;
+        final key = '${old.address}:${old.port}';
+        if (old.latencyMs != null) latencyMap[key] = old.latencyMs!;
+        if (old.lastPingedAt != null) pingTimeMap[key] = old.lastPingedAt!;
+      }
+      final (tagged, fetchResult) = await _fetchAndTagConfigs(url, subId, allowSelfSigned: allowSelfSigned, hwid: hwid);
+      if (tagged.isEmpty) {
+        throw Exception('Subscription returned no valid configurations');
       }
       await storage.removeConfigsBatch(oldConfigs.map((c) => c.id).toList());
-      final (tagged, fetchResult) = await _fetchAndTagConfigs(url, subId, allowSelfSigned: allowSelfSigned, hwid: hwid);
       newConfigs = tagged.map((c) {
-        final ms = latencyMap['${c.address}:${c.port}'];
-        return ms != null ? c.copyWith(latencyMs: ms) : c;
+        final key = '${c.address}:${c.port}';
+        final ms = latencyMap[key];
+        final pingedAt = pingTimeMap[key];
+        return (ms != null || pingedAt != null)
+            ? c.copyWith(latencyMs: ms, lastPingedAt: pingedAt)
+            : c;
       }).toList();
 
       final updatedSub = Subscription(
@@ -342,6 +352,42 @@ class ConfigNotifier extends AsyncNotifier<ConfigState> {
       addedSubscriptions: addedSubscriptions,
       skippedConfigs: remappedConfigs.length - newConfigs.length,
     );
+  }
+
+  // ─── Reorder ───
+
+  Future<void> reorderSubscriptions(int oldIndex, int newIndex) async {
+    final current = state.maybeWhen(data: (d) => d, orElse: () => null);
+    if (current == null) return;
+    final subs = List<Subscription>.from(current.subscriptions);
+    if (oldIndex < newIndex) newIndex -= 1;
+    final item = subs.removeAt(oldIndex);
+    subs.insert(newIndex, item);
+    await storage.saveSubscriptions(subs);
+    state = AsyncData(current.copyWith(subscriptions: subs));
+  }
+
+  Future<void> reorderGroupConfigs(String? subId, int oldIndex, int newIndex) async {
+    final current = state.maybeWhen(data: (d) => d, orElse: () => null);
+    if (current == null) return;
+    final groupConfigs = List<VpnConfig>.from(
+      subId == null
+          ? current.standaloneConfigs
+          : (current.configsBySubscription[subId] ?? []),
+    );
+    if (oldIndex < newIndex) newIndex -= 1;
+    final item = groupConfigs.removeAt(oldIndex);
+    groupConfigs.insert(newIndex.clamp(0, groupConfigs.length), item);
+    final allConfigs = List<VpnConfig>.from(current.configs);
+    final firstIdx = allConfigs.indexWhere((c) => c.subscriptionId == subId);
+    allConfigs.removeWhere((c) => c.subscriptionId == subId);
+    if (firstIdx >= 0) {
+      allConfigs.insertAll(firstIdx, groupConfigs);
+    } else {
+      allConfigs.addAll(groupConfigs);
+    }
+    await storage.saveConfigs(allConfigs);
+    state = AsyncData(current.copyWith(configs: allConfigs));
   }
 }
 

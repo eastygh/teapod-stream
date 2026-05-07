@@ -113,16 +113,8 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "isBinaryReady" -> {
-                        val geoip = java.io.File(filesDir, "geoip.dat")
-                        val geosite = java.io.File(filesDir, "geosite.dat")
-
-                        // If geodata is missing, try to extract it now (it's fast)
-                        if (!geoip.exists() || !geosite.exists()) {
-                            XrayVpnService.prepareBinaries(this)
-                        }
-
-                        // teapod-core is an AAR library — no separate binary needed
-                        result.success(geoip.exists() && geosite.exists())
+                        // teapod-core is an AAR library; geo files are managed by Flutter
+                        result.success(true)
                     }
 
                     "prepareBinaries" -> {
@@ -130,6 +122,10 @@ class MainActivity : FlutterActivity() {
                             val success = XrayVpnService.prepareBinaries(this)
                             runOnUiThread { result.success(success) }
                         }.start()
+                    }
+
+                    "getFilesDir" -> {
+                        result.success(filesDir.absolutePath)
                     }
 
                     "ping" -> {
@@ -378,6 +374,26 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun pingHost(address: String, port: Int): Int? {
+        return icmpPing(address) ?: tcpPing(address, port)
+    }
+
+    private fun icmpPing(address: String): Int? {
+        return try {
+            val proc = Runtime.getRuntime().exec(arrayOf("ping", "-c", "1", "-w", "3", address))
+            val exited = proc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+            if (!exited || proc.exitValue() != 0) {
+                proc.destroy()
+                return null
+            }
+            val output = proc.inputStream.bufferedReader().readText()
+            Regex("time=(\\d+\\.?\\d*)").find(output)
+                ?.groupValues?.get(1)?.toFloatOrNull()?.toInt()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun tcpPing(address: String, port: Int): Int? {
         return try {
             val start = System.currentTimeMillis()
             val socket = java.net.Socket()

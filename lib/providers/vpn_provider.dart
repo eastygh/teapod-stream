@@ -371,6 +371,8 @@ class VpnNotifier extends Notifier<VpnState2> {
       showNotification: settings.showNotification,
       killSwitch: settings.killSwitchEnabled,
       routing: settings.routing,
+      sniffingEnabled: settings.sniffingEnabled,
+      mtu: settings.mtu,
     );
     state = state.copyWith(
       activeSocksPort: actualSocksPort,
@@ -458,10 +460,28 @@ class VpnNotifier extends Notifier<VpnState2> {
   Future<void> pingAllConfigs() async {
     final configState = ref.read(configProvider).maybeWhen(data: (d) => d, orElse: () => null);
     if (configState == null) return;
-    // Ping in parallel, then update state sequentially to avoid race condition
+    final now = DateTime.now();
     final pinged = await Future.wait(configState.configs.map((config) async {
       final ms = await _engine.pingConfig(config);
-      return config.copyWith(latencyMs: ms);
+      return config.copyWith(latencyMs: ms, lastPingedAt: now);
+    }));
+    for (final updated in pinged) {
+      await ref.read(configProvider.notifier).updateConfig(updated);
+    }
+  }
+
+  Future<void> pingStaleConfigs() async {
+    final configState = ref.read(configProvider).maybeWhen(data: (d) => d, orElse: () => null);
+    if (configState == null) return;
+    final now = DateTime.now();
+    final stale = configState.configs.where((c) {
+      if (c.lastPingedAt == null) return true;
+      return now.difference(c.lastPingedAt!) > const Duration(hours: 1);
+    }).toList();
+    if (stale.isEmpty) return;
+    final pinged = await Future.wait(stale.map((config) async {
+      final ms = await _engine.pingConfig(config);
+      return config.copyWith(latencyMs: ms, lastPingedAt: now);
     }));
     for (final updated in pinged) {
       await ref.read(configProvider.notifier).updateConfig(updated);

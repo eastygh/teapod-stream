@@ -32,6 +32,7 @@ class VpnConfig {
   final DateTime createdAt;
   final String? rawUri;
   final int? latencyMs;
+  final DateTime? lastPingedAt;
   final String? subscriptionId; // ID of the subscription this config came from
   final String? ssPrefix; // hex-encoded prefix bytes for Outline Shadowsocks (e.g. "160301...")
   final String? obfsPassword; // for Hysteria2 salamander obfuscation
@@ -67,6 +68,7 @@ class VpnConfig {
     required this.createdAt,
     this.rawUri,
     this.latencyMs,
+    this.lastPingedAt,
     this.subscriptionId,
     this.ssPrefix,
     this.obfsPassword,
@@ -93,6 +95,7 @@ class VpnConfig {
   VpnConfig copyWith({
     String? name,
     int? latencyMs,
+    DateTime? lastPingedAt,
     String? subscriptionId,
     bool? allowInsecure,
     String? pinSHA256,
@@ -124,6 +127,7 @@ class VpnConfig {
       createdAt: createdAt,
       rawUri: rawUri ?? this.rawUri,
       latencyMs: latencyMs ?? this.latencyMs,
+      lastPingedAt: lastPingedAt ?? this.lastPingedAt,
       subscriptionId: subscriptionId ?? this.subscriptionId,
       ssPrefix: ssPrefix,
       obfsPassword: obfsPassword,
@@ -161,6 +165,7 @@ class VpnConfig {
         'createdAt': createdAt.toIso8601String(),
         'rawUri': rawUri,
         'latencyMs': latencyMs,
+        'lastPingedAt': lastPingedAt?.toIso8601String(),
         'subscriptionId': subscriptionId,
         'ssPrefix': ssPrefix,
         'obfsPassword': obfsPassword,
@@ -206,6 +211,9 @@ class VpnConfig {
         createdAt: DateTime.parse(json['createdAt'] as String),
         rawUri: json['rawUri'] as String?,
         latencyMs: json['latencyMs'] as int?,
+        lastPingedAt: json['lastPingedAt'] != null
+            ? DateTime.parse(json['lastPingedAt'] as String)
+            : null,
         subscriptionId: json['subscriptionId'] as String?,
         ssPrefix: json['ssPrefix'] as String?,
         obfsPassword: json['obfsPassword'] as String?,

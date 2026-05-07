@@ -19,12 +19,14 @@ VpnConfig _vlessConfig({String address = '1.2.3.4', int port = 443}) => VpnConfi
 VpnEngineOptions _defaultOptions({
   int socksPort = 10808,
   RoutingSettings? routing,
+  bool sniffingEnabled = true,
 }) => VpnEngineOptions(
   socksPort: socksPort,
   httpPort: 0,
   socksUser: '',
   socksPassword: '',
   routing: routing ?? const RoutingSettings(),
+  sniffingEnabled: sniffingEnabled,
 );
 
 void main() {
@@ -59,18 +61,20 @@ void main() {
       expect(tags, containsAll(['proxy', 'direct', 'dns-out']));
     });
 
-    test('routing domainStrategy is AsIs', () {
+    test('routing domainStrategy is IPIfNonMatch', () {
       final json = XrayConfigBuilder.build(_vlessConfig(), _defaultOptions());
       final routing = json['routing'] as Map<String, dynamic>;
-      expect(routing['domainStrategy'], 'AsIs');
+      expect(routing['domainStrategy'], 'IPIfNonMatch');
     });
 
     group('sniffing routeOnly', () {
-      test('is false when routing is global (default)', () {
+      // routeOnly is always true when sniffing is enabled — prevents xray from replacing
+      // the connection destination with re-resolved domain (DNS leak / tun2socks breakage).
+      test('is true by default (sniffing enabled)', () {
         final json = XrayConfigBuilder.build(_vlessConfig(), _defaultOptions());
         final inbound = (json['inbounds'] as List).first as Map<String, dynamic>;
         final sniffing = inbound['sniffing'] as Map<String, dynamic>;
-        expect(sniffing['routeOnly'], isFalse);
+        expect(sniffing['routeOnly'], isTrue);
       });
 
       test('is true when geo routing is active', () {
@@ -85,12 +89,13 @@ void main() {
         expect(sniffing['routeOnly'], isTrue);
       });
 
-      test('is true when adblock is enabled', () {
-        final routing = const RoutingSettings(adBlockEnabled: true);
-        final json = XrayConfigBuilder.build(_vlessConfig(), _defaultOptions(routing: routing));
+      test('is absent when sniffing is disabled', () {
+        final json = XrayConfigBuilder.build(
+            _vlessConfig(), _defaultOptions(sniffingEnabled: false));
         final inbound = (json['inbounds'] as List).first as Map<String, dynamic>;
         final sniffing = inbound['sniffing'] as Map<String, dynamic>;
-        expect(sniffing['routeOnly'], isTrue);
+        expect(sniffing['enabled'], isFalse);
+        expect(sniffing.containsKey('routeOnly'), isFalse);
       });
     });
 

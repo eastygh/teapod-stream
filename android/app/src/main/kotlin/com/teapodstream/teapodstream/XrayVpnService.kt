@@ -62,6 +62,7 @@ class XrayVpnService : VpnService() {
         const val EXTRA_SHOW_NOTIFICATION = "show_notification" // show rich notification with speed
         const val EXTRA_KILL_SWITCH = "kill_switch" // block traffic when VPN drops unexpectedly
         const val EXTRA_ALLOW_ICMP = "allow_icmp" // allow ICMP echo (ping) through the tunnel
+        const val EXTRA_MTU = "mtu" // TUN MTU size
 
         // Static state tracker for querying from Dart
         @Volatile private var currentNativeState: String = "disconnected"
@@ -112,6 +113,9 @@ class XrayVpnService : VpnService() {
         private const val HEARTBEAT_URL_HOST = "cp.cloudflare.com"
         private const val CONNECTIVITY_CHECK_HOST = "8.8.8.8"
         private const val HEARTBEAT_INTERVAL_MS = 15_000L
+        // If tun2socks has more than this many active proxy goroutines the gVisor TCP
+        // state machine is leaking connections. Trigger a reconnect to reset it.
+        private const val TUN_CONN_LEAK_THRESHOLD = 200L
         // After a reconnect xray establishes its outbound connection lazily. Probes run every
         // 15 s but failures are not counted until the first probe succeeds (warmup mode). This
         // self-adjusts to actual network speed instead of relying on a fixed timer. Hard ceiling:
@@ -203,12 +207,9 @@ class XrayVpnService : VpnService() {
     private var heartbeatThread: Thread? = null
     private val heartbeatFailures = AtomicInteger(0)
 
-    // TUN parameters — always the same fixed values; defined once here to avoid
-    // scattering magic strings across the file. The Dart side uses the same constants
-    // (AppConstants.tunAddress / tunNetmask / tunMtu / tunDns).
     private val tunAddress = "10.120.230.1"
     private val tunNetmask = "255.255.255.0"
-    private val tunMtu    = 1500
+    @Volatile private var tunMtu = 1500
     private val tunDns    = "1.1.1.1"
 
     override fun onCreate() {
@@ -289,15 +290,16 @@ class XrayVpnService : VpnService() {
                 val proxyOnly = intent.getBooleanExtra(EXTRA_PROXY_ONLY, false)
                 val killSwitch = intent.getBooleanExtra(EXTRA_KILL_SWITCH, false)
                 val allowIcmp = intent.getBooleanExtra(EXTRA_ALLOW_ICMP, true)
+                val mtu = intent.getIntExtra(EXTRA_MTU, 1500).coerceIn(576, 9000)
                 // Persist non-sensitive params for CONNECT_QUICK reconnect (no credentials)
                 saveConnectionParams(socksPort, excludedPackages, includedPackages,
-                    vpnMode, ssPrefix, proxyOnly, showNotification, killSwitch, allowIcmp)
+                    vpnMode, ssPrefix, proxyOnly, showNotification, killSwitch, allowIcmp, mtu)
                 userRequestedDisconnect.set(false)
                 ensureForeground()
                 Thread {
                     startVpn(xrayConfig, socksPort, socksUser, socksPassword,
                         excludedPackages, includedPackages, vpnMode, ssPrefix, proxyOnly, killSwitch,
-                        allowIcmp)
+                        allowIcmp, mtu = mtu)
                 }.start()
                 return START_STICKY
             }
@@ -344,7 +346,7 @@ class XrayVpnService : VpnService() {
                                 params.socksPort, socksUser, socksPassword,
                                 params.excludedPackages, params.includedPackages, params.vpnMode,
                                 params.ssPrefix, params.proxyOnly, params.killSwitch,
-                                params.allowIcmp, isReconnect = true
+                                params.allowIcmp, mtu = params.mtu, isReconnect = true
                             )
                         }.start()
                     }
@@ -378,7 +380,7 @@ class XrayVpnService : VpnService() {
                             params.socksPort, socksUser, socksPassword,
                             params.excludedPackages, params.includedPackages, params.vpnMode,
                             params.ssPrefix, params.proxyOnly, params.killSwitch,
-                            params.allowIcmp, isReconnect = true
+                            params.allowIcmp, mtu = params.mtu, isReconnect = true
                         )
                     }.start()
                     return START_STICKY
@@ -404,6 +406,7 @@ class XrayVpnService : VpnService() {
         val showNotification: Boolean,
         val killSwitch: Boolean,
         val allowIcmp: Boolean,
+        val mtu: Int = 1500,
     )
 
     private fun saveConnectionParams(
@@ -412,6 +415,7 @@ class XrayVpnService : VpnService() {
         vpnMode: String, ssPrefix: String?, proxyOnly: Boolean, showNotification: Boolean,
         killSwitch: Boolean,
         allowIcmp: Boolean,
+        mtu: Int = 1500,
     ) {
         try {
             val json = org.json.JSONObject().apply {
@@ -424,6 +428,7 @@ class XrayVpnService : VpnService() {
                 put("showNotification", showNotification)
                 put("killSwitch", killSwitch)
                 put("allowIcmp", allowIcmp)
+                put("mtu", mtu)
             }
             File(filesDir, "last_connection_meta.json").writeText(json.toString())
         } catch (e: Exception) {
@@ -449,6 +454,7 @@ class XrayVpnService : VpnService() {
                 showNotification = json.optBoolean("showNotification", true),
                 killSwitch = json.optBoolean("killSwitch", false),
                 allowIcmp = json.optBoolean("allowIcmp", false),
+                mtu = json.optInt("mtu", 1500).coerceIn(576, 9000),
             )
         } catch (_: Exception) {
             null
@@ -496,6 +502,7 @@ class XrayVpnService : VpnService() {
         proxyOnly: Boolean = false,
         killSwitch: Boolean = false,
         allowIcmp: Boolean = true,
+        mtu: Int = 1500,
         isReconnect: Boolean = false,
     ) {
         if (!isRunning.compareAndSet(false, true)) return
@@ -505,6 +512,7 @@ class XrayVpnService : VpnService() {
         tunModeActive = !proxyOnly
         allowIcmpEnabled = allowIcmp
         proxyOnlyMode = proxyOnly
+        tunMtu = mtu.coerceIn(576, 9000)
         if (!isReconnect) clearLogFile()
         setState(if (isReconnect) "reconnecting" else "connecting")
         log("info", "Starting VPN (MTU: $tunMtu)")
@@ -1214,13 +1222,30 @@ class XrayVpnService : VpnService() {
                         break
                     }
 
+                    // Detect gVisor connection table leak: if the number of active proxy
+                    // goroutines is abnormally high the TCP state machine is accumulating
+                    // stale entries (TIME_WAIT / CLOSE_WAIT). Reconnect to reset gVisor.
+                    if (tunModeActive) {
+                        val activeConns = Teapodcore.tunActiveConnections()
+                        if (activeConns > TUN_CONN_LEAK_THRESHOLD) {
+                            log("warning", "gVisor connection leak detected (activeConns=$activeConns), reconnecting")
+                            reconnectInternal()
+                            break
+                        }
+                    }
+
                     checkTunnelConnectivity(port)
                     warmupDone = true
                     heartbeatFailures.set(0)
                     noInternetStreak = 0
                     successCount++
                     if (successCount % 5 == 0) {
-                        log("info", "Heartbeat alive (${successCount} ok, tun=${Teapodcore.isTunRunning()})")
+                        val activeConns = if (tunModeActive) Teapodcore.tunActiveConnections() else 0L
+                        log("info", "Heartbeat alive (${successCount} ok, tun=${Teapodcore.isTunRunning()}, conns=$activeConns)")
+                    }
+                    // Log detailed tunnel stats every ~1 minute for diagnostics.
+                    if (tunModeActive && successCount % 4 == 0) {
+                        Teapodcore.logTunStats()
                     }
                 } catch (_: InterruptedException) {
                     break
@@ -1494,6 +1519,7 @@ class XrayVpnService : VpnService() {
             log("warning", "Failed to save socks_creds: ${e.message}")
         }
         VpnEventStreamHandler.sendConnectedEvent(socksPort, socksUser, socksPassword)
+        updateNotification(0, 0)
         sendBroadcast(Intent("com.teapodstream.STATE_CHANGED").apply {
             putExtra("state", "connected")
             putExtra("socksPort", socksPort)
