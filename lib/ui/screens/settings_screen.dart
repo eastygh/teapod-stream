@@ -673,6 +673,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
       ],
     );
   }
+
 }
 
 // ── Section header (0xNN · label) ────────────────────────────────

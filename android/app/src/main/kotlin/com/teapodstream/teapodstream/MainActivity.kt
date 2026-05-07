@@ -113,16 +113,8 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "isBinaryReady" -> {
-                        val geoip = java.io.File(filesDir, "geoip.dat")
-                        val geosite = java.io.File(filesDir, "geosite.dat")
-
-                        // If geodata is missing, try to extract it now (it's fast)
-                        if (!geoip.exists() || !geosite.exists()) {
-                            XrayVpnService.prepareBinaries(this)
-                        }
-
-                        // teapod-core is an AAR library — no separate binary needed
-                        result.success(geoip.exists() && geosite.exists())
+                        // teapod-core is an AAR library; geo files are managed by Flutter
+                        result.success(true)
                     }
 
                     "prepareBinaries" -> {
@@ -130,6 +122,10 @@ class MainActivity : FlutterActivity() {
                             val success = XrayVpnService.prepareBinaries(this)
                             runOnUiThread { result.success(success) }
                         }.start()
+                    }
+
+                    "getFilesDir" -> {
+                        result.success(filesDir.absolutePath)
                     }
 
                     "ping" -> {

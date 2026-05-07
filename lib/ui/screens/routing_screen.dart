@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/routing_settings.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/vpn_provider.dart';
+import '../../providers/geo_provider.dart';
+import '../../core/services/settings_service.dart' show GeoPresets;
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/breadcrumb_bar.dart';
@@ -20,6 +22,7 @@ class RoutingScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settingsAsync = ref.watch(settingsProvider);
     final isConnected   = ref.watch(vpnProvider).isConnected;
+    final geoMissing    = ref.watch(geoProvider) is GeoMissing;
 
     return Scaffold(
       body: SafeArea(
@@ -36,9 +39,15 @@ class RoutingScreen extends ConsumerWidget {
           data: (settings) => _RoutingBody(
             routing: settings.routing,
             isConnected: isConnected,
+            geoMissing: geoMissing,
+            geoipUrl: settings.geoipUrl,
+            geositeUrl: settings.geositeUrl,
             onUpdate: (r) => ref
                 .read(settingsProvider.notifier)
                 .save(settings.copyWith(routing: r)),
+            onUpdateGeo: (ip, site) => ref
+                .read(settingsProvider.notifier)
+                .save(settings.copyWith(geoipUrl: ip, geositeUrl: site)),
           ),
         ),
       ),
@@ -51,12 +60,20 @@ class RoutingScreen extends ConsumerWidget {
 class _RoutingBody extends StatelessWidget {
   final RoutingSettings routing;
   final bool isConnected;
+  final bool geoMissing;
+  final String geoipUrl;
+  final String geositeUrl;
   final void Function(RoutingSettings) onUpdate;
+  final void Function(String geoipUrl, String geositeUrl) onUpdateGeo;
 
   const _RoutingBody({
     required this.routing,
     required this.isConnected,
+    required this.geoMissing,
+    required this.geoipUrl,
+    required this.geositeUrl,
     required this.onUpdate,
+    required this.onUpdateGeo,
   });
 
   int get _ruleCount =>
@@ -83,6 +100,7 @@ class _RoutingBody extends StatelessWidget {
     final t = Theme.of(context).extension<TeapodTokens>()!;
     final ruleStr = _ruleCount.toString().padLeft(2, '0');
     final locked  = isConnected;
+    final geoHint = geoMissing ? 'Загрузите geo-базы (Настройки → geo.data)' : null;
 
     return Column(
       children: [
@@ -170,12 +188,13 @@ class _RoutingBody extends StatelessWidget {
                     subLabel: 'geoip',
                     count: routing.geoCodes.length,
                     enabled: routing.geoEnabled,
-                    locked: locked,
+                    locked: locked || geoMissing,
+                    hint: geoHint,
                     onToggle: (v) => onUpdate(routing.copyWith(geoEnabled: v)),
                     chips: routing.geoCodes,
-                    onRemove: locked ? null : (code) => onUpdate(routing.copyWith(
+                    onRemove: (locked || geoMissing) ? null : (code) => onUpdate(routing.copyWith(
                         geoCodes: routing.geoCodes.where((c) => c != code).toList())),
-                    onAdd: locked ? null : () => _showCountryPicker(context),
+                    onAdd: (locked || geoMissing) ? null : () => _showCountryPicker(context),
                     addLabel: '+ регион',
                   ),
                   // Domain
@@ -202,13 +221,14 @@ class _RoutingBody extends StatelessWidget {
                     subLabel: 'geosite',
                     count: routing.geositeCodes.length,
                     enabled: routing.geositeEnabled,
-                    locked: locked,
+                    locked: locked || geoMissing,
+                    hint: geoHint,
                     last: true,
                     onToggle: (v) => onUpdate(routing.copyWith(geositeEnabled: v)),
                     chips: routing.geositeCodes,
-                    onRemove: locked ? null : (code) => onUpdate(routing.copyWith(
+                    onRemove: (locked || geoMissing) ? null : (code) => onUpdate(routing.copyWith(
                         geositeCodes: routing.geositeCodes.where((c) => c != code).toList())),
-                    onAdd: locked ? null : () => _showGeositePicker(context),
+                    onAdd: (locked || geoMissing) ? null : () => _showGeositePicker(context),
                     addLabel: '+ категория',
                   ),
                 ],
@@ -218,11 +238,50 @@ class _RoutingBody extends StatelessWidget {
                 _RowToggle(
                   t: t,
                   title: 'Блокировка рекламы',
-                  hint: 'geosite:category-ads-all → block',
+                  hint: geoHint ?? 'geosite:category-ads-all → block',
                   value: routing.adBlockEnabled,
-                  locked: locked,
+                  locked: locked || geoMissing,
                   last: true,
                   onChange: (v) => onUpdate(routing.copyWith(adBlockEnabled: v)),
+                ),
+
+                // 0x50 GEO.DATA
+                _SectionHeader(t: t, addr: '0x50', label: 'geo.data'),
+                GestureDetector(
+                  onTap: () => showModalBottomSheet<void>(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: t.bgElev,
+                    builder: (_) => _GeoSourceSheet(
+                      currentGeoipUrl: geoipUrl,
+                      currentGeositeUrl: geositeUrl,
+                      onSave: onUpdateGeo,
+                    ),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                    decoration: BoxDecoration(
+                        border: Border(bottom: BorderSide(color: t.lineSoft))),
+                    child: Row(
+                      children: [
+                        Text('ИСТОЧНИК',
+                            style: AppTheme.mono(
+                                size: 10, color: t.textMuted, letterSpacing: 1)),
+                        const SizedBox(width: 10),
+                        Text(GeoPresets.nameOf(geoipUrl, geositeUrl),
+                            style: AppTheme.mono(size: 10, color: t.textDim)),
+                        const Spacer(),
+                        Text('›',
+                            style: AppTheme.mono(size: 16, color: t.textMuted)),
+                      ],
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
+                  decoration: BoxDecoration(
+                      border: Border(bottom: BorderSide(color: t.line))),
+                  child: const _GeoUpdateRow(),
                 ),
 
                 const SizedBox(height: 32),
@@ -571,6 +630,7 @@ class _ToggleWithChips extends StatelessWidget {
   final bool enabled;
   final bool locked;
   final bool last;
+  final String? hint;
   final void Function(bool) onToggle;
   final List<String> chips;
   final List<String>? chipKeys;
@@ -587,6 +647,7 @@ class _ToggleWithChips extends StatelessWidget {
     required this.onToggle,
     required this.chips,
     required this.addLabel,
+    this.hint,
     this.chipKeys,
     this.onRemove,
     this.onAdd,
@@ -604,22 +665,32 @@ class _ToggleWithChips extends StatelessWidget {
           // Sublabel + toggle row
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(subLabel.toUpperCase(),
-                        style: AppTheme.mono(size: 10, color: t.textMuted, letterSpacing: 1)),
-                    const SizedBox(width: 10),
-                    Text('$count',
-                        style: AppTheme.mono(size: 10, color: t.textDim)),
+                    Row(
+                      children: [
+                        Text(subLabel.toUpperCase(),
+                            style: AppTheme.mono(size: 10, color: t.textMuted, letterSpacing: 1)),
+                        const SizedBox(width: 10),
+                        Text('$count',
+                            style: AppTheme.mono(size: 10, color: t.textDim)),
+                      ],
+                    ),
+                    _SquareSwitch(
+                      t: t, value: enabled,
+                      onChanged: locked ? null : (v) => onToggle(v),
+                    ),
                   ],
                 ),
-                _SquareSwitch(
-                  t: t, value: enabled,
-                  onChanged: locked ? null : (v) => onToggle(v),
-                ),
+                if (hint != null) ...[
+                  const SizedBox(height: 3),
+                  Text(hint!,
+                      style: AppTheme.mono(size: 10, color: t.textMuted, letterSpacing: 0.5)),
+                ],
               ],
             ),
           ),
@@ -980,6 +1051,301 @@ class _CustomInputRow extends StatelessWidget {
               width: 40, height: 40,
               color: t.accent,
               child: Icon(Icons.add, size: 16, color: t.bg),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Geo update row ────────────────────────────────────────────────
+
+class _GeoUpdateRow extends ConsumerWidget {
+  const _GeoUpdateRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = Theme.of(context).extension<TeapodTokens>()!;
+    final geoState = ref.watch(geoProvider);
+    return switch (geoState) {
+      GeoMissing() => _GeoActionRow(
+          t: t,
+          label: 'Geo-базы не загружены',
+          labelColor: t.danger,
+          btnLabel: 'ЗАГРУЗИТЬ',
+          filled: true,
+          onTap: () => ref.read(geoProvider.notifier).download(),
+        ),
+      GeoReady(:final lastUpdated) => _GeoActionRow(
+          t: t,
+          label: lastUpdated != null ? _daysAgo(lastUpdated) : 'Geo-базы загружены',
+          btnLabel: 'ОБНОВИТЬ',
+          onTap: () => ref.read(geoProvider.notifier).download(),
+        ),
+      GeoDownloading(:final downloaded, :final total) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Загрузка geo-баз...',
+                  style: AppTheme.sans(size: 13, color: t.text)),
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: total > 0 ? downloaded / total : null,
+                backgroundColor: t.line,
+                color: t.accent,
+                minHeight: 2,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                total > 0
+                    ? '${(downloaded / 1024 / 1024).toStringAsFixed(1)} / ${(total / 1024 / 1024).toStringAsFixed(1)} МБ'
+                    : '${(downloaded / 1024 / 1024).toStringAsFixed(1)} МБ',
+                style: AppTheme.mono(size: 10, color: t.textDim),
+              ),
+            ],
+          ),
+        ),
+      GeoError(:final message) => _GeoActionRow(
+          t: t,
+          label: message,
+          labelColor: t.danger,
+          btnLabel: 'ПОВТОР',
+          onTap: () => ref.read(geoProvider.notifier).download(),
+        ),
+    };
+  }
+
+  String _daysAgo(DateTime dt) {
+    final days = DateTime.now().difference(dt).inDays;
+    if (days == 0) return 'Обновлено сегодня';
+    if (days == 1) return 'Обновлено вчера';
+    return 'Обновлено $days дн. назад';
+  }
+}
+
+class _GeoActionRow extends StatelessWidget {
+  final TeapodTokens t;
+  final String label;
+  final Color? labelColor;
+  final String btnLabel;
+  final bool filled;
+  final VoidCallback onTap;
+
+  const _GeoActionRow({
+    required this.t,
+    required this.label,
+    required this.btnLabel,
+    required this.onTap,
+    this.labelColor,
+    this.filled = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Text(label,
+                style: AppTheme.sans(size: 13, color: labelColor ?? t.text)),
+          ),
+          const SizedBox(width: 12),
+          GestureDetector(
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              color: filled ? t.accent : null,
+              decoration: filled
+                  ? null
+                  : BoxDecoration(border: Border.all(color: t.line)),
+              child: Text(btnLabel,
+                  style: AppTheme.mono(
+                      size: 10,
+                      color: filled ? t.bg : t.accent,
+                      letterSpacing: 1)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Geo source bottom sheet ───────────────────────────────────────
+
+class _GeoSourceSheet extends StatefulWidget {
+  final String currentGeoipUrl;
+  final String currentGeositeUrl;
+  final void Function(String geoipUrl, String geositeUrl) onSave;
+
+  const _GeoSourceSheet({
+    required this.currentGeoipUrl,
+    required this.currentGeositeUrl,
+    required this.onSave,
+  });
+
+  @override
+  State<_GeoSourceSheet> createState() => _GeoSourceSheetState();
+}
+
+class _GeoSourceSheetState extends State<_GeoSourceSheet> {
+  late String _geoipUrl;
+  late String _geositeUrl;
+  late final TextEditingController _geoipCtrl;
+  late final TextEditingController _geositeCtrl;
+
+  bool get _isCustom => GeoPresets.nameOf(_geoipUrl, _geositeUrl) == 'custom';
+
+  @override
+  void initState() {
+    super.initState();
+    _geoipUrl = widget.currentGeoipUrl;
+    _geositeUrl = widget.currentGeositeUrl;
+    _geoipCtrl = TextEditingController(text: _isCustom ? _geoipUrl : '');
+    _geositeCtrl = TextEditingController(text: _isCustom ? _geositeUrl : '');
+  }
+
+  @override
+  void dispose() {
+    _geoipCtrl.dispose();
+    _geositeCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).extension<TeapodTokens>()!;
+    final currentName = GeoPresets.nameOf(_geoipUrl, _geositeUrl);
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('GEO.DATA // SOURCE',
+              style: AppTheme.mono(size: 10, color: t.textMuted, letterSpacing: 1)),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final preset in GeoPresets.all)
+                GestureDetector(
+                  onTap: () => setState(() {
+                    _geoipUrl = preset.geoipUrl;
+                    _geositeUrl = preset.geositeUrl;
+                  }),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: currentName == preset.name ? t.accentSoft : null,
+                      border: Border.all(
+                          color: currentName == preset.name ? t.accent : t.line),
+                    ),
+                    child: Text(preset.name,
+                        style: AppTheme.mono(
+                            size: 11,
+                            color: currentName == preset.name
+                                ? t.accent
+                                : t.textDim,
+                            letterSpacing: 0.5)),
+                  ),
+                ),
+              GestureDetector(
+                onTap: () => setState(() {
+                  _geoipUrl = _geoipCtrl.text.trim().isNotEmpty
+                      ? _geoipCtrl.text.trim()
+                      : 'custom';
+                  _geositeUrl = _geositeCtrl.text.trim().isNotEmpty
+                      ? _geositeCtrl.text.trim()
+                      : 'custom';
+                }),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: currentName == 'custom' ? t.accentSoft : null,
+                    border: Border.all(
+                        color: currentName == 'custom' ? t.accent : t.line),
+                  ),
+                  child: Text('Custom',
+                      style: AppTheme.mono(
+                          size: 11,
+                          color: currentName == 'custom' ? t.accent : t.textDim,
+                          letterSpacing: 0.5)),
+                ),
+              ),
+            ],
+          ),
+          if (currentName == 'custom') ...[
+            const SizedBox(height: 16),
+            Text('GEOIP URL',
+                style: AppTheme.mono(
+                    size: 9, color: t.textMuted, letterSpacing: 1)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _geoipCtrl,
+              style: AppTheme.mono(size: 12, color: t.text),
+              decoration: InputDecoration(
+                hintText: 'https://example.com/geoip.dat',
+                hintStyle: AppTheme.mono(size: 12, color: t.textMuted),
+                enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: t.line),
+                    borderRadius: BorderRadius.zero),
+                focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: t.accent),
+                    borderRadius: BorderRadius.zero),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              onChanged: (v) => setState(() => _geoipUrl = v.trim()),
+            ),
+            const SizedBox(height: 12),
+            Text('GEOSITE URL',
+                style: AppTheme.mono(
+                    size: 9, color: t.textMuted, letterSpacing: 1)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _geositeCtrl,
+              style: AppTheme.mono(size: 12, color: t.text),
+              decoration: InputDecoration(
+                hintText: 'https://example.com/geosite.dat',
+                hintStyle: AppTheme.mono(size: 12, color: t.textMuted),
+                enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: t.line),
+                    borderRadius: BorderRadius.zero),
+                focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: t.accent),
+                    borderRadius: BorderRadius.zero),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              onChanged: (v) => setState(() => _geositeUrl = v.trim()),
+            ),
+          ],
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: GestureDetector(
+              onTap: () {
+                widget.onSave(_geoipUrl, _geositeUrl);
+                Navigator.pop(context);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                color: t.accent,
+                alignment: Alignment.center,
+                child: Text('ПРИМЕНИТЬ',
+                    style: AppTheme.mono(
+                        size: 11, color: t.bg, letterSpacing: 1)),
+              ),
             ),
           ),
         ],

@@ -14,6 +14,7 @@ import 'providers/vpn_provider.dart';
 import 'core/services/settings_service.dart';
 import 'providers/settings_provider.dart';
 import 'providers/update_provider.dart';
+import 'providers/geo_provider.dart';
 import 'providers/theme_provider.dart';
 import 'core/services/deeplink_handler.dart';
 
@@ -87,6 +88,7 @@ class _AppShellState extends ConsumerState<_AppShell>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(vpnProvider.notifier).syncNativeState();
       ref.read(vpnProvider.notifier).pingStaleConfigs();
+      ref.read(geoProvider.notifier).check();
       if (_autoConnectAttempted) return;
       _autoConnectAttempted = true;
       _tryAutoConnect();

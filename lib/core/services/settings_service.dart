@@ -15,6 +15,30 @@ enum VpnMode {
 
 enum FontScale { normal, large }
 
+class GeoPresets {
+  static const _lsGeoip    = 'https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat';
+  static const _lsGeosite  = 'https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat';
+  static const _rfGeoip    = 'https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geoip.dat';
+  static const _rfGeosite  = 'https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geosite.dat';
+  static const _v2Geoip    = 'https://github.com/v2fly/geoip/releases/latest/download/geoip.dat';
+  static const _v2Geosite  = 'https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat';
+
+  static const defaultGeoipUrl    = _lsGeoip;
+  static const defaultGeositeUrl  = _lsGeosite;
+
+  static const loyalsoldier = (name: 'Loyalsoldier', geoipUrl: _lsGeoip,  geositeUrl: _lsGeosite);
+  static const runetfreedom = (name: 'runetfreedom', geoipUrl: _rfGeoip,  geositeUrl: _rfGeosite);
+  static const v2fly         = (name: 'v2fly',        geoipUrl: _v2Geoip,  geositeUrl: _v2Geosite);
+  static final all = [loyalsoldier, runetfreedom, v2fly];
+
+  static String nameOf(String geoipUrl, String geositeUrl) {
+    for (final p in all) {
+      if (p.geoipUrl == geoipUrl && p.geositeUrl == geositeUrl) return p.name;
+    }
+    return 'custom';
+  }
+}
+
 class AppSettings {
   final int socksPort;
   final LogLevel logLevel;
@@ -40,6 +64,8 @@ class AppSettings {
   final RoutingSettings routing;
   final UpdateChannel updateChannel;
   final FontScale fontScale;
+  final String geoipUrl;
+  final String geositeUrl;
 
   const AppSettings({
     this.socksPort = AppConstants.defaultSocksPort,
@@ -66,6 +92,8 @@ class AppSettings {
     this.routing = const RoutingSettings(),
     this.updateChannel = UpdateChannel.stable,
     this.fontScale = FontScale.normal,
+    this.geoipUrl = GeoPresets.defaultGeoipUrl,
+    this.geositeUrl = GeoPresets.defaultGeositeUrl,
   });
 
   AppSettings copyWith({
@@ -93,6 +121,8 @@ class AppSettings {
     RoutingSettings? routing,
     UpdateChannel? updateChannel,
     FontScale? fontScale,
+    String? geoipUrl,
+    String? geositeUrl,
   }) {
     return AppSettings(
       socksPort: socksPort ?? this.socksPort,
@@ -119,6 +149,8 @@ class AppSettings {
       routing: routing ?? this.routing,
       updateChannel: updateChannel ?? this.updateChannel,
       fontScale: fontScale ?? this.fontScale,
+      geoipUrl: geoipUrl ?? this.geoipUrl,
+      geositeUrl: geositeUrl ?? this.geositeUrl,
     );
   }
 
@@ -147,6 +179,8 @@ class AppSettings {
     'routing': routing.toJson(),
     'updateChannel': updateChannel.name,
     'fontScale': fontScale.name,
+    'geoipUrl': geoipUrl,
+    'geositeUrl': geositeUrl,
   };
 
   static AppSettings fromJson(Map<String, dynamic> json) {
@@ -181,6 +215,8 @@ class AppSettings {
         (e) => e.name == json['updateChannel'], orElse: () => UpdateChannel.stable),
       fontScale: FontScale.values.firstWhere(
         (e) => e.name == json['fontScale'], orElse: () => FontScale.normal),
+      geoipUrl: json['geoipUrl'] as String? ?? GeoPresets.defaultGeoipUrl,
+      geositeUrl: json['geositeUrl'] as String? ?? GeoPresets.defaultGeositeUrl,
     );
   }
 
