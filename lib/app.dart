@@ -143,6 +143,21 @@ class _AppShellState extends ConsumerState<_AppShell>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AsyncValue<ConfigState>>(configProvider, (prev, next) {
+      final prevIds = prev?.maybeWhen(
+        data: (d) => d.configs.map((c) => c.id).toSet(),
+        orElse: () => null,
+      );
+      final nextIds = next.maybeWhen(
+        data: (d) => d.configs.map((c) => c.id).toSet(),
+        orElse: () => null,
+      );
+      if (prevIds == null || nextIds == null) return;
+      if (nextIds.difference(prevIds).isNotEmpty) {
+        ref.read(vpnProvider.notifier).pingStaleConfigs();
+      }
+    });
+
     final updateState = ref.watch(updateProvider);
     final hasUpdate = updateState is UpdateAvailable ||
         updateState is UpdateDownloading ||

@@ -350,6 +350,42 @@ class ConfigNotifier extends AsyncNotifier<ConfigState> {
       skippedConfigs: remappedConfigs.length - newConfigs.length,
     );
   }
+
+  // ─── Reorder ───
+
+  Future<void> reorderSubscriptions(int oldIndex, int newIndex) async {
+    final current = state.maybeWhen(data: (d) => d, orElse: () => null);
+    if (current == null) return;
+    final subs = List<Subscription>.from(current.subscriptions);
+    if (oldIndex < newIndex) newIndex -= 1;
+    final item = subs.removeAt(oldIndex);
+    subs.insert(newIndex, item);
+    await storage.saveSubscriptions(subs);
+    state = AsyncData(current.copyWith(subscriptions: subs));
+  }
+
+  Future<void> reorderGroupConfigs(String? subId, int oldIndex, int newIndex) async {
+    final current = state.maybeWhen(data: (d) => d, orElse: () => null);
+    if (current == null) return;
+    final groupConfigs = List<VpnConfig>.from(
+      subId == null
+          ? current.standaloneConfigs
+          : (current.configsBySubscription[subId] ?? []),
+    );
+    if (oldIndex < newIndex) newIndex -= 1;
+    final item = groupConfigs.removeAt(oldIndex);
+    groupConfigs.insert(newIndex.clamp(0, groupConfigs.length), item);
+    final allConfigs = List<VpnConfig>.from(current.configs);
+    final firstIdx = allConfigs.indexWhere((c) => c.subscriptionId == subId);
+    allConfigs.removeWhere((c) => c.subscriptionId == subId);
+    if (firstIdx >= 0) {
+      allConfigs.insertAll(firstIdx, groupConfigs);
+    } else {
+      allConfigs.addAll(groupConfigs);
+    }
+    await storage.saveConfigs(allConfigs);
+    state = AsyncData(current.copyWith(configs: allConfigs));
+  }
 }
 
 class ImportConnectionsResult {
