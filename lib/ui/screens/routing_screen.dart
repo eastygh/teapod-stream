@@ -42,6 +42,7 @@ class RoutingScreen extends ConsumerWidget {
             geoMissing: geoMissing,
             geoipUrl: settings.geoipUrl,
             geositeUrl: settings.geositeUrl,
+            sniffingEnabled: settings.sniffingEnabled,
             onUpdate: (r) => ref
                 .read(settingsProvider.notifier)
                 .save(settings.copyWith(routing: r)),
@@ -63,6 +64,7 @@ class _RoutingBody extends StatelessWidget {
   final bool geoMissing;
   final String geoipUrl;
   final String geositeUrl;
+  final bool sniffingEnabled;
   final void Function(RoutingSettings) onUpdate;
   final void Function(String geoipUrl, String geositeUrl) onUpdateGeo;
 
@@ -72,6 +74,7 @@ class _RoutingBody extends StatelessWidget {
     required this.geoMissing,
     required this.geoipUrl,
     required this.geositeUrl,
+    required this.sniffingEnabled,
     required this.onUpdate,
     required this.onUpdateGeo,
   });
@@ -101,6 +104,9 @@ class _RoutingBody extends StatelessWidget {
     final ruleStr = _ruleCount.toString().padLeft(2, '0');
     final locked  = isConnected;
     final geoHint = geoMissing ? 'Загрузите geo-базы (Настройки → geo.data)' : null;
+    const sniffHint = 'Требует снифинг (Настройки → xray)';
+    final domainLocked  = locked || !sniffingEnabled;
+    final geositeLocked = locked || geoMissing || !sniffingEnabled;
 
     return Column(
       children: [
@@ -203,14 +209,15 @@ class _RoutingBody extends StatelessWidget {
                     subLabel: 'domain.suffix',
                     count: routing.domainZones.length,
                     enabled: routing.domainEnabled,
-                    locked: locked,
+                    locked: domainLocked,
+                    hint: !sniffingEnabled ? sniffHint : null,
                     last: true,
                     onToggle: (v) => onUpdate(routing.copyWith(domainEnabled: v)),
                     chips: routing.domainZones.map(_formatDomainLabel).toList(),
                     chipKeys: routing.domainZones,
-                    onRemove: locked ? null : (zone) => onUpdate(routing.copyWith(
+                    onRemove: domainLocked ? null : (zone) => onUpdate(routing.copyWith(
                         domainZones: routing.domainZones.where((z) => z != zone).toList())),
-                    onAdd: locked ? null : () => _showDomainPicker(context),
+                    onAdd: domainLocked ? null : () => _showDomainPicker(context),
                     addLabel: '+ суффикс',
                   ),
 
@@ -221,14 +228,14 @@ class _RoutingBody extends StatelessWidget {
                     subLabel: 'geosite',
                     count: routing.geositeCodes.length,
                     enabled: routing.geositeEnabled,
-                    locked: locked || geoMissing,
-                    hint: geoHint,
+                    locked: geositeLocked,
+                    hint: !sniffingEnabled ? sniffHint : geoHint,
                     last: true,
                     onToggle: (v) => onUpdate(routing.copyWith(geositeEnabled: v)),
                     chips: routing.geositeCodes,
-                    onRemove: (locked || geoMissing) ? null : (code) => onUpdate(routing.copyWith(
+                    onRemove: geositeLocked ? null : (code) => onUpdate(routing.copyWith(
                         geositeCodes: routing.geositeCodes.where((c) => c != code).toList())),
-                    onAdd: (locked || geoMissing) ? null : () => _showGeositePicker(context),
+                    onAdd: geositeLocked ? null : () => _showGeositePicker(context),
                     addLabel: '+ категория',
                   ),
                 ],

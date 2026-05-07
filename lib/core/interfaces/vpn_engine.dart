@@ -33,6 +33,8 @@ class VpnEngineOptions {
   final bool showNotification;
   final bool killSwitch;
   final RoutingSettings routing;
+  final bool sniffingEnabled;
+  final int mtu;
 
   const VpnEngineOptions({
     required this.socksPort,
@@ -51,5 +53,7 @@ class VpnEngineOptions {
     this.showNotification = true,
     this.killSwitch = false,
     this.routing = const RoutingSettings(),
+    this.sniffingEnabled = true,
+    this.mtu = 1500,
   });
 }

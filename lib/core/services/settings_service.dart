@@ -66,6 +66,8 @@ class AppSettings {
   final FontScale fontScale;
   final String geoipUrl;
   final String geositeUrl;
+  final bool sniffingEnabled;
+  final int mtu;
 
   const AppSettings({
     this.socksPort = AppConstants.defaultSocksPort,
@@ -94,6 +96,8 @@ class AppSettings {
     this.fontScale = FontScale.normal,
     this.geoipUrl = GeoPresets.defaultGeoipUrl,
     this.geositeUrl = GeoPresets.defaultGeositeUrl,
+    this.sniffingEnabled = true,
+    this.mtu = 1500,
   });
 
   AppSettings copyWith({
@@ -123,6 +127,8 @@ class AppSettings {
     FontScale? fontScale,
     String? geoipUrl,
     String? geositeUrl,
+    bool? sniffingEnabled,
+    int? mtu,
   }) {
     return AppSettings(
       socksPort: socksPort ?? this.socksPort,
@@ -151,6 +157,8 @@ class AppSettings {
       fontScale: fontScale ?? this.fontScale,
       geoipUrl: geoipUrl ?? this.geoipUrl,
       geositeUrl: geositeUrl ?? this.geositeUrl,
+      sniffingEnabled: sniffingEnabled ?? this.sniffingEnabled,
+      mtu: mtu ?? this.mtu,
     );
   }
 
@@ -181,6 +189,8 @@ class AppSettings {
     'fontScale': fontScale.name,
     'geoipUrl': geoipUrl,
     'geositeUrl': geositeUrl,
+    'sniffingEnabled': sniffingEnabled,
+    'mtu': mtu,
   };
 
   static AppSettings fromJson(Map<String, dynamic> json) {
@@ -217,6 +227,8 @@ class AppSettings {
         (e) => e.name == json['fontScale'], orElse: () => FontScale.normal),
       geoipUrl: json['geoipUrl'] as String? ?? GeoPresets.defaultGeoipUrl,
       geositeUrl: json['geositeUrl'] as String? ?? GeoPresets.defaultGeositeUrl,
+      sniffingEnabled: json['sniffingEnabled'] as bool? ?? true,
+      mtu: json['mtu'] as int? ?? 1500,
     );
   }
 
@@ -258,6 +270,8 @@ class SettingsService {
   static const _routingAdBlockEnabledKey = 'routing_adblock_enabled';
   static const _updateChannelKey = 'update_channel';
   static const _fontScaleKey = 'font_scale';
+  static const _sniffingEnabledKey = 'sniffing_enabled';
+  static const _mtuKey = 'mtu';
 
   final _secure = StorageSecureService();
 
@@ -307,6 +321,8 @@ class SettingsService {
         (e) => e.name == prefs.getString(_fontScaleKey),
         orElse: () => FontScale.normal,
       ),
+      sniffingEnabled: prefs.getBool(_sniffingEnabledKey) ?? true,
+      mtu: prefs.getInt(_mtuKey) ?? 1500,
     );
   }
 
@@ -361,6 +377,8 @@ class SettingsService {
     await prefs.setBool(_routingAdBlockEnabledKey, settings.routing.adBlockEnabled);
     await prefs.setString(_updateChannelKey, settings.updateChannel.name);
     await prefs.setString(_fontScaleKey, settings.fontScale.name);
+    await prefs.setBool(_sniffingEnabledKey, settings.sniffingEnabled);
+    await prefs.setInt(_mtuKey, settings.mtu);
     // SOCKS credentials go to encrypted storage
     await _secure.writeSocksCredentials(settings.socksUser, settings.socksPassword);
   }

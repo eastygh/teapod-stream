@@ -9,6 +9,10 @@ class XrayConfigBuilder {
   static Map<String, dynamic> build(VpnConfig config, VpnEngineOptions options) {
     final dnsBlock = _buildDnsBlock(options);
     final routing = options.routing;
+    // routeOnly=true: sniffed domain is used for routing only — xray does NOT replace
+    // the connection destination. Without this, xray re-resolves the domain and
+    // redirects the connection to a different IP, breaking tun2socks and leaking DNS.
+    final routeOnly = options.sniffingEnabled;
 
     return {
       'log': {'loglevel': options.logLevel.name},
@@ -28,9 +32,11 @@ class XrayConfigBuilder {
             'udp': options.enableUdp,
           },
           'sniffing': {
-            'enabled': true,
-            'destOverride': ['http', 'tls', 'quic'],
-            'routeOnly': true,
+            'enabled': options.sniffingEnabled,
+            if (options.sniffingEnabled) ...{
+              'destOverride': ['http', 'tls', 'quic'],
+              'routeOnly': routeOnly,
+            },
           },
         },
       ],
