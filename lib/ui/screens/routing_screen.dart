@@ -46,6 +46,9 @@ class RoutingScreen extends ConsumerWidget {
             onUpdate: (r) => ref
                 .read(settingsProvider.notifier)
                 .save(settings.copyWith(routing: r)),
+            onUpdateSniffing: (v) => ref
+                .read(settingsProvider.notifier)
+                .save(settings.copyWith(sniffingEnabled: v)),
             onUpdateGeo: (ip, site) => ref
                 .read(settingsProvider.notifier)
                 .save(settings.copyWith(geoipUrl: ip, geositeUrl: site)),
@@ -66,6 +69,7 @@ class _RoutingBody extends StatelessWidget {
   final String geositeUrl;
   final bool sniffingEnabled;
   final void Function(RoutingSettings) onUpdate;
+  final void Function(bool) onUpdateSniffing;
   final void Function(String geoipUrl, String geositeUrl) onUpdateGeo;
 
   const _RoutingBody({
@@ -76,6 +80,7 @@ class _RoutingBody extends StatelessWidget {
     required this.geositeUrl,
     required this.sniffingEnabled,
     required this.onUpdate,
+    required this.onUpdateSniffing,
     required this.onUpdateGeo,
   });
 
@@ -202,6 +207,15 @@ class _RoutingBody extends StatelessWidget {
                         geoCodes: routing.geoCodes.where((c) => c != code).toList())),
                     onAdd: (locked || geoMissing) ? null : () => _showCountryPicker(context),
                     addLabel: '+ регион',
+                  ),
+                  // Sniffing
+                  _RowToggle(
+                    t: t,
+                    title: 'Снифинг',
+                    hint: 'Определять домен из TLS SNI · нужен для domain.suffix и geosite',
+                    value: sniffingEnabled,
+                    locked: locked,
+                    onChange: onUpdateSniffing,
                   ),
                   // Domain
                   _ToggleWithChips(

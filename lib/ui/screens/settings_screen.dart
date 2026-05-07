@@ -557,14 +557,6 @@ class _SettingsBodyState extends State<_SettingsBody> {
           ),
           _RowToggle(
             t: t,
-            title: 'Снифинг',
-            hint: 'Определять домен из TLS SNI для маршрутизации',
-            value: s.sniffingEnabled,
-            locked: locked,
-            onChange: (v) => widget.onUpdate(s.copyWith(sniffingEnabled: v)),
-          ),
-          _RowToggle(
-            t: t,
             title: 'UDP',
             hint: 'Разрешить UDP-трафик через SOCKS',
             value: s.enableUdp,
