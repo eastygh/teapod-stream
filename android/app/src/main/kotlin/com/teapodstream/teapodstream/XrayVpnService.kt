@@ -113,6 +113,9 @@ class XrayVpnService : VpnService() {
         private const val HEARTBEAT_URL_HOST = "cp.cloudflare.com"
         private const val CONNECTIVITY_CHECK_HOST = "8.8.8.8"
         private const val HEARTBEAT_INTERVAL_MS = 15_000L
+        // If tun2socks has more than this many active proxy goroutines the gVisor TCP
+        // state machine is leaking connections. Trigger a reconnect to reset it.
+        private const val TUN_CONN_LEAK_THRESHOLD = 200L
         // After a reconnect xray establishes its outbound connection lazily. Probes run every
         // 15 s but failures are not counted until the first probe succeeds (warmup mode). This
         // self-adjusts to actual network speed instead of relying on a fixed timer. Hard ceiling:
@@ -1219,13 +1222,30 @@ class XrayVpnService : VpnService() {
                         break
                     }
 
+                    // Detect gVisor connection table leak: if the number of active proxy
+                    // goroutines is abnormally high the TCP state machine is accumulating
+                    // stale entries (TIME_WAIT / CLOSE_WAIT). Reconnect to reset gVisor.
+                    if (tunModeActive) {
+                        val activeConns = Teapodcore.tunActiveConnections()
+                        if (activeConns > TUN_CONN_LEAK_THRESHOLD) {
+                            log("warning", "gVisor connection leak detected (activeConns=$activeConns), reconnecting")
+                            reconnectInternal()
+                            break
+                        }
+                    }
+
                     checkTunnelConnectivity(port)
                     warmupDone = true
                     heartbeatFailures.set(0)
                     noInternetStreak = 0
                     successCount++
                     if (successCount % 5 == 0) {
-                        log("info", "Heartbeat alive (${successCount} ok, tun=${Teapodcore.isTunRunning()})")
+                        val activeConns = if (tunModeActive) Teapodcore.tunActiveConnections() else 0L
+                        log("info", "Heartbeat alive (${successCount} ok, tun=${Teapodcore.isTunRunning()}, conns=$activeConns)")
+                    }
+                    // Log detailed tunnel stats every ~1 minute for diagnostics.
+                    if (tunModeActive && successCount % 4 == 0) {
+                        Teapodcore.logTunStats()
                     }
                 } catch (_: InterruptedException) {
                     break
