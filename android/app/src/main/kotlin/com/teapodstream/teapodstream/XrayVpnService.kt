@@ -1494,6 +1494,7 @@ class XrayVpnService : VpnService() {
             log("warning", "Failed to save socks_creds: ${e.message}")
         }
         VpnEventStreamHandler.sendConnectedEvent(socksPort, socksUser, socksPassword)
+        updateNotification(0, 0)
         sendBroadcast(Intent("com.teapodstream.STATE_CHANGED").apply {
             putExtra("state", "connected")
             putExtra("socksPort", socksPort)

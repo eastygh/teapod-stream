@@ -130,8 +130,9 @@ class ConfigNotifier extends AsyncNotifier<ConfigState> {
         if (old.latencyMs != null) latencyMap[key] = old.latencyMs!;
         if (old.lastPingedAt != null) pingTimeMap[key] = old.lastPingedAt!;
       }
-      await storage.removeConfigsBatch(oldConfigs.map((c) => c.id).toList());
+      // Fetch first — only remove old configs if fetch succeeds
       final (tagged, fetchResult) = await _fetchAndTagConfigs(url, subId, allowSelfSigned: allowSelfSigned, hwid: hwid);
+      await storage.removeConfigsBatch(oldConfigs.map((c) => c.id).toList());
       newConfigs = tagged.map((c) {
         final key = '${c.address}:${c.port}';
         final ms = latencyMap[key];
