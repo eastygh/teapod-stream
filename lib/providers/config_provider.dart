@@ -124,14 +124,21 @@ class ConfigNotifier extends AsyncNotifier<ConfigState> {
       final oldConfigs = current.configs.where((c) => c.subscriptionId == subId).toList();
       // Preserve ping results by matching address:port
       final latencyMap = <String, int>{};
+      final pingTimeMap = <String, DateTime>{};
       for (final old in oldConfigs) {
-        if (old.latencyMs != null) latencyMap['${old.address}:${old.port}'] = old.latencyMs!;
+        final key = '${old.address}:${old.port}';
+        if (old.latencyMs != null) latencyMap[key] = old.latencyMs!;
+        if (old.lastPingedAt != null) pingTimeMap[key] = old.lastPingedAt!;
       }
       await storage.removeConfigsBatch(oldConfigs.map((c) => c.id).toList());
       final (tagged, fetchResult) = await _fetchAndTagConfigs(url, subId, allowSelfSigned: allowSelfSigned, hwid: hwid);
       newConfigs = tagged.map((c) {
-        final ms = latencyMap['${c.address}:${c.port}'];
-        return ms != null ? c.copyWith(latencyMs: ms) : c;
+        final key = '${c.address}:${c.port}';
+        final ms = latencyMap[key];
+        final pingedAt = pingTimeMap[key];
+        return (ms != null || pingedAt != null)
+            ? c.copyWith(latencyMs: ms, lastPingedAt: pingedAt)
+            : c;
       }).toList();
 
       final updatedSub = Subscription(

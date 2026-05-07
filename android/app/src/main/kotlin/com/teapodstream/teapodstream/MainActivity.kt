@@ -378,6 +378,26 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun pingHost(address: String, port: Int): Int? {
+        return icmpPing(address) ?: tcpPing(address, port)
+    }
+
+    private fun icmpPing(address: String): Int? {
+        return try {
+            val proc = Runtime.getRuntime().exec(arrayOf("ping", "-c", "1", "-w", "3", address))
+            val exited = proc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+            if (!exited || proc.exitValue() != 0) {
+                proc.destroy()
+                return null
+            }
+            val output = proc.inputStream.bufferedReader().readText()
+            Regex("time=(\\d+\\.?\\d*)").find(output)
+                ?.groupValues?.get(1)?.toFloatOrNull()?.toInt()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun tcpPing(address: String, port: Int): Int? {
         return try {
             val start = System.currentTimeMillis()
             val socket = java.net.Socket()

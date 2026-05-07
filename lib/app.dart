@@ -86,6 +86,7 @@ class _AppShellState extends ConsumerState<_AppShell>
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(vpnProvider.notifier).syncNativeState();
+      ref.read(vpnProvider.notifier).pingStaleConfigs();
       if (_autoConnectAttempted) return;
       _autoConnectAttempted = true;
       _tryAutoConnect();
