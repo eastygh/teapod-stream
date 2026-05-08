@@ -1244,8 +1244,11 @@ class XrayVpnService : VpnService() {
                         log("info", "Heartbeat alive (${successCount} ok, tun=${Teapodcore.isTunRunning()}, conns=$activeConns)")
                     }
                     // Log detailed tunnel stats every ~1 minute for diagnostics.
+                    // getTunStatsLine() returns a Go string → log() routes it to
+                    // vpn_log.txt + Flutter EventChannel (not only logcat).
                     if (tunModeActive && successCount % 4 == 0) {
-                        Teapodcore.logTunStats()
+                        val stats = Teapodcore.getTunStatsLine()
+                        if (stats.isNotEmpty()) log("debug", "tun stats: $stats")
                     }
                 } catch (_: InterruptedException) {
                     break
