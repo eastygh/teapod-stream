@@ -237,6 +237,7 @@ class _ConfigsScreenState extends ConsumerState<ConfigsScreen> {
             outerIndex: localOffset + i,
             addr: localOffset + i + 1,
             activeConfigId: cs.activeConfigId,
+            isActiveSubscription: cs.activeSubscriptionId == subs[i].id,
             isExpanded: _expandedSubs.contains(subs[i].id),
             vpnState: vpnState.connectionState,
             canReorderGroup: canReorderSubs,
@@ -255,6 +256,11 @@ class _ConfigsScreenState extends ConsumerState<ConfigsScreen> {
             onRename: () => _renameSubscription(context, ref, subs[i]),
             onEditUrl: () => _editSubscriptionUrl(context, ref, subs[i]),
             onDelete: () => _deleteSubscription(context, ref, subs[i]),
+            onSelectSubscription: () {
+              final id = subs[i].id;
+              final isActive = cs.activeSubscriptionId == id;
+              ref.read(configProvider.notifier).setActiveSubscription(isActive ? null : id);
+            },
             onSelectConfig: (c) => _selectConfig(ref, c),
             onConfigMenu: (c) => _showConfigMenu(context, ref, c),
             onReorderConfigs: (o, n) =>
@@ -914,6 +920,7 @@ class _SubGroup extends StatelessWidget {
   final int outerIndex;
   final int addr;
   final String? activeConfigId;
+  final bool isActiveSubscription;
   final bool isExpanded;
   final VpnState vpnState;
   final bool canReorderGroup;
@@ -923,6 +930,7 @@ class _SubGroup extends StatelessWidget {
   final VoidCallback onRename;
   final VoidCallback onEditUrl;
   final VoidCallback onDelete;
+  final VoidCallback onSelectSubscription;
   final void Function(VpnConfig) onSelectConfig;
   final void Function(VpnConfig) onConfigMenu;
   final void Function(int, int) onReorderConfigs;
@@ -935,6 +943,7 @@ class _SubGroup extends StatelessWidget {
     required this.outerIndex,
     required this.addr,
     required this.activeConfigId,
+    this.isActiveSubscription = false,
     required this.isExpanded,
     required this.vpnState,
     required this.canReorderGroup,
@@ -944,6 +953,7 @@ class _SubGroup extends StatelessWidget {
     required this.onRename,
     required this.onEditUrl,
     required this.onDelete,
+    required this.onSelectSubscription,
     required this.onSelectConfig,
     required this.onConfigMenu,
     required this.onReorderConfigs,
@@ -978,7 +988,11 @@ class _SubGroup extends StatelessWidget {
       child: Text(hexAddr,
           style: AppTheme.mono(
               size: 10,
-              color: canReorderGroup ? t.accent.withAlpha(0xAA) : t.textMuted)),
+              color: isActiveSubscription
+                  ? t.accent
+                  : canReorderGroup
+                      ? t.accent.withAlpha(0xAA)
+                      : t.textMuted)),
     );
 
     if (canReorderGroup) {
@@ -991,74 +1005,85 @@ class _SubGroup extends StatelessWidget {
     return Column(
       children: [
         // Header
-        Container(
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: t.lineSoft))),
-          child: Row(
-            children: [
-              // Address (drag zone)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 11, 0, 11),
-                child: addrWidget,
+        Stack(
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                color: isActiveSubscription ? t.accentFade : null,
+                border: Border(bottom: BorderSide(color: t.lineSoft)),
               ),
-              const SizedBox(width: 10),
-              // Info area: tap = toggle, long press = menu
-              Expanded(
-                child: GestureDetector(
-                  onTap: onToggle,
-                  onLongPress: () => _showSubMenu(context),
-                  behavior: HitTestBehavior.opaque,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 11),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(sub.name,
-                            style: AppTheme.sans(
-                                size: 13,
-                                weight: FontWeight.w500,
-                                color: t.text,
-                                letterSpacing: -0.2)),
-                        const SizedBox(height: 2),
-                        Row(
+              child: Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 11, 0, 11),
+                    child: addrWidget,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: onToggle,
+                      onLongPress: () => _showSubMenu(context),
+                      behavior: HitTestBehavior.opaque,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('cnt=${configs.length}',
-                                style: AppTheme.mono(size: 10, color: t.textMuted)),
-                            Text(' · $_lastRefresh',
-                                style: AppTheme.mono(size: 10, color: t.textMuted)),
-                            if (expireLabel != null) ...[
-                              Text(' · ',
-                                  style: AppTheme.mono(size: 10, color: t.textMuted)),
-                              Text(expireLabel,
-                                  style: AppTheme.mono(size: 10, color: t.danger)),
-                            ],
+                            Text(sub.name,
+                                style: AppTheme.sans(
+                                    size: 13,
+                                    weight: FontWeight.w500,
+                                    color: isActiveSubscription ? t.accent : t.text,
+                                    letterSpacing: -0.2)),
+                            const SizedBox(height: 2),
+                            Row(
+                              children: [
+                                Text('cnt=${configs.length}',
+                                    style: AppTheme.mono(size: 10, color: t.textMuted)),
+                                Text(' · $_lastRefresh',
+                                    style: AppTheme.mono(size: 10, color: t.textMuted)),
+                                if (expireLabel != null) ...[
+                                  Text(' · ',
+                                      style: AppTheme.mono(size: 10, color: t.textMuted)),
+                                  Text(expireLabel,
+                                      style: AppTheme.mono(size: 10, color: t.danger)),
+                                ],
+                              ],
+                            ),
                           ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              ),
-              // Refresh + chevron
-              GestureDetector(
-                onTap: onRefresh,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 11, 8, 11),
-                  child: Icon(Icons.refresh_rounded, size: 16, color: t.textMuted),
-                ),
-              ),
-              GestureDetector(
-                onTap: onToggle,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 11, 20, 11),
-                  child: Icon(
-                    isExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-                    size: 16,
-                    color: t.textMuted,
+                  GestureDetector(
+                    onTap: onRefresh,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 11, 8, 11),
+                      child: Icon(Icons.refresh_rounded, size: 16, color: t.textMuted),
+                    ),
                   ),
-                ),
+                  GestureDetector(
+                    onTap: onToggle,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(0, 11, 20, 11),
+                      child: Icon(
+                        isExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                        size: 16,
+                        color: t.textMuted,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            if (isActiveSubscription)
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                child: Container(width: 2, color: t.accent),
+              ),
+          ],
         ),
 
         // Expanded configs
@@ -1165,6 +1190,11 @@ class _SubGroup extends StatelessWidget {
               ),
             ),
             Container(height: 1, color: t.line),
+            _SheetTile(
+              t: t,
+              label: isActiveSubscription ? 'Сбросить авто-выбор' : 'Авто-выбор лучшего',
+              onTap: () { Navigator.pop(ctx); onSelectSubscription(); },
+            ),
             _SheetTile(t: t, label: 'Переименовать', onTap: () { Navigator.pop(ctx); onRename(); }),
             _SheetTile(t: t, label: 'Изменить URL', onTap: () { Navigator.pop(ctx); onEditUrl(); }),
             _SheetTile(t: t, label: 'Копировать URL', onTap: () async {

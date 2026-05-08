@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../core/interfaces/vpn_engine.dart';
+import '../core/models/vpn_config.dart';
 import '../core/constants/app_constants.dart';
 import '../core/models/vpn_stats.dart';
 import '../core/models/vpn_log_entry.dart';
@@ -64,6 +65,7 @@ class VpnNotifier extends Notifier<VpnState2> {
   Timer? _connectTimeout;
   Timer? _disconnectTimeout;
   Timer? _statsPoller;
+  Timer? _subRefreshTimer;
   DateTime? _connectedAt;
 
 
@@ -89,10 +91,26 @@ class VpnNotifier extends Notifier<VpnState2> {
       _connectTimeout?.cancel();
       _disconnectTimeout?.cancel();
       _statsPoller?.cancel();
+      _subRefreshTimer?.cancel();
+    });
+
+    // Auto-refresh subscriptions: timer fires hourly, staleness check uses configured interval
+    _subRefreshTimer = Timer.periodic(const Duration(hours: 1), (_) async {
+      final settings = ref.read(settingsProvider).maybeWhen(data: (d) => d, orElse: () => null);
+      if (settings?.subAutoRefresh != true) return;
+      await ref.read(configProvider.notifier)
+          .refreshStaleSubscriptions(intervalHours: settings!.subAutoRefreshHours);
     });
 
     // Sync state on init (for case when VPN is already running from tile/notification)
     Future.microtask(() async {
+      // Auto-refresh stale subscriptions on startup
+      final settings = ref.read(settingsProvider).maybeWhen(data: (d) => d, orElse: () => null);
+      if (settings?.subAutoRefresh == true) {
+        await ref.read(configProvider.notifier)
+            .refreshStaleSubscriptions(intervalHours: settings!.subAutoRefreshHours);
+      }
+
       final vpnState = await _engine.getVpnState();
       if (vpnState.state == VpnState.connected && vpnState.socksPort > 0) {
         if (vpnState.connectedAtMs > 0) {
@@ -316,7 +334,7 @@ class VpnNotifier extends Notifier<VpnState2> {
 
     final configState =
         ref.read(configProvider).maybeWhen(data: (d) => d, orElse: () => null);
-    final config = configState?.activeConfig;
+    final config = _resolveEffectiveConfig(configState);
     if (config == null) {
       ref.read(logServiceProvider.notifier).addError('No configuration selected');
       state = state.copyWith(connectionState: VpnState.error, error: 'No configuration selected');
@@ -373,6 +391,7 @@ class VpnNotifier extends Notifier<VpnState2> {
       routing: settings.routing,
       sniffingEnabled: settings.sniffingEnabled,
       mtu: settings.mtu,
+      dnsQueryStrategy: settings.dnsQueryStrategy,
     );
     state = state.copyWith(
       activeSocksPort: actualSocksPort,
@@ -455,6 +474,23 @@ class VpnNotifier extends Notifier<VpnState2> {
       }
     }
     await connect();
+  }
+
+  VpnConfig? _resolveEffectiveConfig(ConfigState? cs) {
+    if (cs == null) return null;
+    final subId = cs.activeSubscriptionId;
+    if (subId != null) {
+      final subConfigs = cs.configs.where((c) => c.subscriptionId == subId).toList();
+      if (subConfigs.isNotEmpty) {
+        subConfigs.sort((a, b) {
+          if (a.latencyMs == null) return 1;
+          if (b.latencyMs == null) return -1;
+          return a.latencyMs!.compareTo(b.latencyMs!);
+        });
+        return subConfigs.first;
+      }
+    }
+    return cs.activeConfig;
   }
 
   Future<void> pingAllConfigs() async {

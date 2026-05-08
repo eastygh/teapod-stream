@@ -15,6 +15,8 @@ enum VpnMode {
 
 enum FontScale { normal, large }
 
+enum DnsQueryStrategy { ipv4Only, ipv6Only, auto }
+
 class GeoPresets {
   static const _lsGeoip    = 'https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat';
   static const _lsGeosite  = 'https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat';
@@ -68,6 +70,9 @@ class AppSettings {
   final String geositeUrl;
   final bool sniffingEnabled;
   final int mtu;
+  final bool subAutoRefresh;
+  final int subAutoRefreshHours;
+  final DnsQueryStrategy dnsQueryStrategy;
 
   const AppSettings({
     this.socksPort = AppConstants.defaultSocksPort,
@@ -98,6 +103,9 @@ class AppSettings {
     this.geositeUrl = GeoPresets.defaultGeositeUrl,
     this.sniffingEnabled = true,
     this.mtu = 1500,
+    this.subAutoRefresh = false,
+    this.subAutoRefreshHours = 6,
+    this.dnsQueryStrategy = DnsQueryStrategy.ipv4Only,
   });
 
   AppSettings copyWith({
@@ -129,6 +137,9 @@ class AppSettings {
     String? geositeUrl,
     bool? sniffingEnabled,
     int? mtu,
+    bool? subAutoRefresh,
+    int? subAutoRefreshHours,
+    DnsQueryStrategy? dnsQueryStrategy,
   }) {
     return AppSettings(
       socksPort: socksPort ?? this.socksPort,
@@ -159,6 +170,9 @@ class AppSettings {
       geositeUrl: geositeUrl ?? this.geositeUrl,
       sniffingEnabled: sniffingEnabled ?? this.sniffingEnabled,
       mtu: mtu ?? this.mtu,
+      subAutoRefresh: subAutoRefresh ?? this.subAutoRefresh,
+      subAutoRefreshHours: subAutoRefreshHours ?? this.subAutoRefreshHours,
+      dnsQueryStrategy: dnsQueryStrategy ?? this.dnsQueryStrategy,
     );
   }
 
@@ -191,6 +205,9 @@ class AppSettings {
     'geositeUrl': geositeUrl,
     'sniffingEnabled': sniffingEnabled,
     'mtu': mtu,
+    'subAutoRefresh': subAutoRefresh,
+    'subAutoRefreshHours': subAutoRefreshHours,
+    'dnsQueryStrategy': dnsQueryStrategy.name,
   };
 
   static AppSettings fromJson(Map<String, dynamic> json) {
@@ -229,6 +246,10 @@ class AppSettings {
       geositeUrl: json['geositeUrl'] as String? ?? GeoPresets.defaultGeositeUrl,
       sniffingEnabled: json['sniffingEnabled'] as bool? ?? true,
       mtu: json['mtu'] as int? ?? 1500,
+      subAutoRefresh: json['subAutoRefresh'] as bool? ?? false,
+      subAutoRefreshHours: json['subAutoRefreshHours'] as int? ?? 6,
+      dnsQueryStrategy: DnsQueryStrategy.values.firstWhere(
+        (e) => e.name == json['dnsQueryStrategy'], orElse: () => DnsQueryStrategy.ipv4Only),
     );
   }
 
@@ -272,6 +293,9 @@ class SettingsService {
   static const _fontScaleKey = 'font_scale';
   static const _sniffingEnabledKey = 'sniffing_enabled';
   static const _mtuKey = 'mtu';
+  static const _subAutoRefreshKey = 'sub_auto_refresh';
+  static const _subAutoRefreshHoursKey = 'sub_auto_refresh_hours';
+  static const _dnsQueryStrategyKey = 'dns_query_strategy';
 
   final _secure = StorageSecureService();
 
@@ -323,6 +347,12 @@ class SettingsService {
       ),
       sniffingEnabled: prefs.getBool(_sniffingEnabledKey) ?? true,
       mtu: prefs.getInt(_mtuKey) ?? 1500,
+      subAutoRefresh: prefs.getBool(_subAutoRefreshKey) ?? false,
+      subAutoRefreshHours: prefs.getInt(_subAutoRefreshHoursKey) ?? 6,
+      dnsQueryStrategy: DnsQueryStrategy.values.firstWhere(
+        (e) => e.name == prefs.getString(_dnsQueryStrategyKey),
+        orElse: () => DnsQueryStrategy.ipv4Only,
+      ),
     );
   }
 
@@ -379,6 +409,9 @@ class SettingsService {
     await prefs.setString(_fontScaleKey, settings.fontScale.name);
     await prefs.setBool(_sniffingEnabledKey, settings.sniffingEnabled);
     await prefs.setInt(_mtuKey, settings.mtu);
+    await prefs.setBool(_subAutoRefreshKey, settings.subAutoRefresh);
+    await prefs.setInt(_subAutoRefreshHoursKey, settings.subAutoRefreshHours);
+    await prefs.setString(_dnsQueryStrategyKey, settings.dnsQueryStrategy.name);
     // SOCKS credentials go to encrypted storage
     await _secure.writeSocksCredentials(settings.socksUser, settings.socksPassword);
   }

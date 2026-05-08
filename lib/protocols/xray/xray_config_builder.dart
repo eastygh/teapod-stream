@@ -4,6 +4,7 @@ import '../../core/models/vpn_config.dart';
 import '../../core/models/dns_config.dart';
 import '../../core/models/routing_settings.dart';
 import '../../core/constants/xray_defaults.dart';
+import '../../core/services/settings_service.dart' show DnsQueryStrategy;
 
 class XrayConfigBuilder {
   static Map<String, dynamic> build(VpnConfig config, VpnEngineOptions options) {
@@ -137,9 +138,16 @@ class XrayConfigBuilder {
     return rules;
   }
 
+  static String _queryStrategy(DnsQueryStrategy s) => switch (s) {
+    DnsQueryStrategy.ipv4Only => 'UseIPv4',
+    DnsQueryStrategy.ipv6Only => 'UseIPv6',
+    DnsQueryStrategy.auto     => 'UseIP',
+  };
+
   static Map<String, dynamic> _buildDnsBlock(VpnEngineOptions options) {
     final server = options.dnsServer;
     final routing = options.routing;
+    final strategy = _queryStrategy(options.dnsQueryStrategy);
     List<dynamic> servers = [];
 
     if (options.dnsMode == DnsMode.direct) {
@@ -147,7 +155,7 @@ class XrayConfigBuilder {
       // Use system resolver for xray's own domain lookups (e.g. routing decisions).
       return {
         'servers': ['localhost'],
-        'queryStrategy': 'UseIPv4',
+        'queryStrategy': strategy,
         'disableFallback': true,
       };
     }
@@ -195,7 +203,7 @@ class XrayConfigBuilder {
     return {
       'hosts': hosts,
       'servers': servers,
-      'queryStrategy': 'UseIPv4',
+      'queryStrategy': strategy,
     };
   }
 

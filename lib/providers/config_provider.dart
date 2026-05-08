@@ -9,11 +9,13 @@ import 'settings_provider.dart';
 class ConfigState {
   final List<VpnConfig> configs;
   final String? activeConfigId;
+  final String? activeSubscriptionId;
   final List<Subscription> subscriptions;
 
   const ConfigState({
     this.configs = const [],
     this.activeConfigId,
+    this.activeSubscriptionId,
     this.subscriptions = const [],
   });
 
@@ -36,11 +38,14 @@ class ConfigState {
     List<VpnConfig>? configs,
     String? activeConfigId,
     bool clearActive = false,
+    String? activeSubscriptionId,
+    bool clearActiveSub = false,
     List<Subscription>? subscriptions,
   }) {
     return ConfigState(
       configs: configs ?? this.configs,
       activeConfigId: clearActive ? null : (activeConfigId ?? this.activeConfigId),
+      activeSubscriptionId: clearActiveSub ? null : (activeSubscriptionId ?? this.activeSubscriptionId),
       subscriptions: subscriptions ?? this.subscriptions,
     );
   }
@@ -53,8 +58,9 @@ class ConfigNotifier extends AsyncNotifier<ConfigState> {
   Future<ConfigState> build() async {
     final configs = await storage.loadConfigs();
     final activeId = await storage.loadActiveConfigId();
+    final activeSubId = await storage.loadActiveSubscriptionId();
     final subs = await storage.loadSubscriptions();
-    return ConfigState(configs: configs, activeConfigId: activeId, subscriptions: subs);
+    return ConfigState(configs: configs, activeConfigId: activeId, activeSubscriptionId: activeSubId, subscriptions: subs);
   }
 
   Future<void> addConfig(VpnConfig config) async {
@@ -86,13 +92,20 @@ class ConfigNotifier extends AsyncNotifier<ConfigState> {
 
   Future<void> setActiveConfig(String? id) async {
     final current = state.maybeWhen(data: (d) => d, orElse: () => null) ?? const ConfigState();
-    // Update in-memory state immediately so connect() reads the right config
+    // Selecting a specific config clears subscription mode
     if (id == null) {
-      state = AsyncData(current.copyWith(clearActive: true));
+      state = AsyncData(current.copyWith(clearActive: true, clearActiveSub: true));
     } else {
-      state = AsyncData(current.copyWith(activeConfigId: id));
+      state = AsyncData(current.copyWith(activeConfigId: id, clearActiveSub: true));
     }
     await storage.saveActiveConfigId(id);
+    await storage.saveActiveSubscriptionId(null);
+  }
+
+  Future<void> setActiveSubscription(String? id) async {
+    final current = state.maybeWhen(data: (d) => d, orElse: () => null) ?? const ConfigState();
+    state = AsyncData(current.copyWith(activeSubscriptionId: id, clearActiveSub: id == null));
+    await storage.saveActiveSubscriptionId(id);
   }
 
   Future<void> updateConfig(VpnConfig updated) async {
@@ -227,12 +240,28 @@ class ConfigNotifier extends AsyncNotifier<ConfigState> {
   Future<void> removeSubscription(String subId) async {
     final current = state.maybeWhen(data: (d) => d, orElse: () => null) ?? const ConfigState();
     await storage.removeSubscription(subId);
+    final clearActiveSub = current.activeSubscriptionId == subId;
+    if (clearActiveSub) await storage.saveActiveSubscriptionId(null);
     state = AsyncData(current.copyWith(
       configs: current.configs.where((c) => c.subscriptionId != subId).toList(),
       subscriptions: current.subscriptions.where((s) => s.id != subId).toList(),
       clearActive: current.activeConfigId != null &&
           current.configs.any((c) => c.id == current.activeConfigId && c.subscriptionId == subId),
+      clearActiveSub: clearActiveSub,
     ));
+  }
+
+  Future<void> refreshStaleSubscriptions({int intervalHours = 6}) async {
+    final current = state.maybeWhen(data: (d) => d, orElse: () => null);
+    if (current == null || current.subscriptions.isEmpty) return;
+    final threshold = Duration(hours: intervalHours);
+    final stale = current.subscriptions.where((s) {
+      if (s.lastFetchedAt == null) return true;
+      return DateTime.now().difference(s.lastFetchedAt!) > threshold;
+    }).toList();
+    for (final sub in stale) {
+      await addSubscriptionFromUrl(sub.url);
+    }
   }
 
   // ─── Import from ConnectionsBundle ───

@@ -153,6 +153,15 @@ class ConfigStorageService {
     await _secure.writeActiveConfigId(id);
   }
 
+  Future<String?> loadActiveSubscriptionId() async {
+    await StorageMigrationService.runIfNeeded();
+    return _secure.readActiveSubscriptionId();
+  }
+
+  Future<void> saveActiveSubscriptionId(String? id) async {
+    await _secure.writeActiveSubscriptionId(id);
+  }
+
   // ─── Subscriptions ───
 
   Future<List<Subscription>> loadSubscriptions() async {

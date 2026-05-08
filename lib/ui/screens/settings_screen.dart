@@ -420,9 +420,29 @@ class _SettingsBodyState extends State<_SettingsBody> {
             hint: 'Отправлять ID устройства для привязки подписки',
             value: s.hwidEnabled,
             locked: locked,
-            last: true,
             onChange: (v) => widget.onUpdate(s.copyWith(hwidEnabled: v)),
           ),
+          _RowToggle(
+            t: t,
+            title: 'Автообновление подписок',
+            hint: 'Обновлять подписки по расписанию',
+            value: s.subAutoRefresh,
+            locked: locked,
+            last: !s.subAutoRefresh,
+            onChange: (v) => widget.onUpdate(s.copyWith(subAutoRefresh: v)),
+          ),
+          if (s.subAutoRefresh)
+            _InlineField(
+              t: t,
+              label: 'Интервал',
+              child: _SegSquare(
+                t: t,
+                value: s.subAutoRefreshHours.toString(),
+                opts: const [('1', '1ч'), ('3', '3ч'), ('6', '6ч'), ('12', '12ч'), ('24', '24ч')],
+                locked: locked,
+                onChanged: (v) => widget.onUpdate(s.copyWith(subAutoRefreshHours: int.parse(v))),
+              ),
+            ),
 
           // ── 0x30 XRAY ─────────────────────────────────────────
           SetSectionHeader(t: t, addr: '0x30', label: 'xray'),
@@ -576,6 +596,39 @@ class _SettingsBodyState extends State<_SettingsBody> {
                   locked: locked,
                   onChanged: (v) => widget.onUpdate(
                       s.copyWith(dnsMode: v == 'proxy' ? DnsMode.proxy : DnsMode.direct)),
+                ),
+              ],
+            ),
+          ),
+          // DNS query strategy (IPv4 / IPv6 / Auto)
+          Container(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+            decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: t.lineSoft))),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('DNS стратегия',
+                        style: AppTheme.sans(size: 14, color: t.text)),
+                    const SizedBox(height: 3),
+                    Text('IP-версия для DNS-запросов',
+                        style: AppTheme.mono(size: 10, color: t.textMuted, letterSpacing: 0.5)),
+                  ],
+                ),
+                _SegSquare(
+                  t: t,
+                  value: s.dnsQueryStrategy.name,
+                  opts: const [
+                    ('ipv4Only', 'IPv4'),
+                    ('ipv6Only', 'IPv6'),
+                    ('auto', 'AUTO'),
+                  ],
+                  locked: locked,
+                  onChanged: (v) => widget.onUpdate(
+                      s.copyWith(dnsQueryStrategy: DnsQueryStrategy.values.firstWhere((e) => e.name == v))),
                 ),
               ],
             ),
