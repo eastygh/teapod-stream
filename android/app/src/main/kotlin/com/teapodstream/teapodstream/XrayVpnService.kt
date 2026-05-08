@@ -116,6 +116,10 @@ class XrayVpnService : VpnService() {
         // If tun2socks has more than this many active proxy goroutines the gVisor TCP
         // state machine is leaking connections. Trigger a reconnect to reset it.
         private const val TUN_CONN_LEAK_THRESHOLD = 200L
+        // If no data has reached the TUN interface for this long while ≥2 connections
+        // are active, tun2socks goroutines are stuck (proxy connections held alive by
+        // keepalives but real data not flowing). SOCKS5 heartbeat won't catch this.
+        private const val TUN_STALL_TIMEOUT_MS = 120_000L
         // After a reconnect xray establishes its outbound connection lazily. Probes run every
         // 15 s but failures are not counted until the first probe succeeds (warmup mode). This
         // self-adjusts to actual network speed instead of relying on a fixed timer. Hard ceiling:
@@ -863,7 +867,10 @@ class XrayVpnService : VpnService() {
             override fun onReceive(context: android.content.Context, intent: android.content.Intent) {
                 when (intent.action) {
                     android.content.Intent.ACTION_SCREEN_OFF -> log("info", "Screen off")
-                    android.content.Intent.ACTION_SCREEN_ON  -> log("info", "Screen on")
+                    android.content.Intent.ACTION_SCREEN_ON  -> {
+                        log("info", "Screen on")
+                        checkTunStallOnWake()
+                    }
                     android.os.PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> {
                         val pm = context.getSystemService(POWER_SERVICE) as PowerManager
                         val idle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) pm.isDeviceIdleMode else false
@@ -880,6 +887,19 @@ class XrayVpnService : VpnService() {
             }
         }
         registerReceiver(screenReceiver, filter)
+    }
+
+    private fun checkTunStallOnWake() {
+        if (!tunModeActive || !isRunning.get()) return
+        val lastRx = Teapodcore.getTunLastRxActivityMs()
+        if (lastRx <= 0) return
+        val idleSec = (System.currentTimeMillis() - lastRx) / 1000
+        if (idleSec < TUN_STALL_TIMEOUT_MS / 1000) return
+        val activeConns = Teapodcore.tunActiveConnections()
+        if (activeConns >= 2) {
+            log("warning", "TUN stall on wake: no data for ${idleSec}s (conns=$activeConns), reconnecting")
+            reconnectInternal()
+        }
     }
 
     private fun startStatsMonitoring() {
@@ -1133,6 +1153,7 @@ class XrayVpnService : VpnService() {
             // the first probe failure should immediately trigger a reconnect.
             var noInternetStreak = 0
             var successCount = 0
+            var lastStallWarnAt = 0L
 
             while (!Thread.currentThread().isInterrupted && isRunning.get()) {
                 try {
@@ -1182,7 +1203,34 @@ class XrayVpnService : VpnService() {
                     // vpn_log.txt + Flutter EventChannel (not only logcat).
                     if (tunModeActive && successCount % 4 == 0) {
                         val stats = Teapodcore.getTunStatsLine()
-                        if (stats.isNotEmpty()) log("debug", "tun stats: $stats")
+                        if (stats.isNotEmpty()) {
+                            val lastRx = Teapodcore.getTunLastRxActivityMs()
+                            val lastRxSec = if (lastRx > 0) (System.currentTimeMillis() - lastRx) / 1000 else -1
+                            log("debug", "tun stats: $stats lastRxSec=$lastRxSec")
+                        }
+                    }
+                    // Detect TUN-layer stall: SOCKS5 heartbeat bypasses tun2socks entirely,
+                    // so it passes even when proxy goroutines are alive but no data reaches
+                    // the TUN interface (e.g. xray connections half-open, held by keepalives).
+                    // getTunLastRxActivityMs() is updated on every TUN write in tun2socks.
+                    if (tunModeActive) {
+                        val lastRx = Teapodcore.getTunLastRxActivityMs()
+                        if (lastRx > 0) {
+                            val now = System.currentTimeMillis()
+                            val idleSec = (now - lastRx) / 1000
+                            val activeConns by lazy { Teapodcore.tunActiveConnections() }
+                            when {
+                                idleSec >= TUN_STALL_TIMEOUT_MS / 1000 && activeConns >= 2 -> {
+                                    log("warning", "TUN stall: no data for ${idleSec}s (conns=$activeConns), reconnecting")
+                                    reconnectInternal()
+                                    break
+                                }
+                                idleSec >= 60 && activeConns >= 2 && now - lastStallWarnAt >= 60_000 -> {
+                                    log("warning", "TUN rx idle for ${idleSec}s (conns=$activeConns)")
+                                    lastStallWarnAt = now
+                                }
+                            }
+                        }
                     }
                 } catch (_: InterruptedException) {
                     break
