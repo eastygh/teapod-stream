@@ -895,11 +895,11 @@ class XrayVpnService : VpnService() {
         if (lastRx <= 0) return
         val idleSec = (System.currentTimeMillis() - lastRx) / 1000
         if (idleSec < TUN_STALL_TIMEOUT_MS / 1000) return
+        // Don't require activeConns >= 2: after Doze, connections drain to 0 naturally
+        // but the tunnel session (xray upstream) may be stale for new connections.
         val activeConns = Teapodcore.tunActiveConnections()
-        if (activeConns >= 2) {
-            log("warning", "TUN stall on wake: no data for ${idleSec}s (conns=$activeConns), reconnecting")
-            reconnectInternal()
-        }
+        log("warning", "TUN stall on wake: no data for ${idleSec}s (conns=$activeConns), reconnecting")
+        reconnectInternal()
     }
 
     private fun startStatsMonitoring() {
