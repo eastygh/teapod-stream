@@ -292,8 +292,9 @@ class XrayVpnService : VpnService() {
                 val allowIcmp = intent.getBooleanExtra(EXTRA_ALLOW_ICMP, true)
                 val mtu = intent.getIntExtra(EXTRA_MTU, 1500).coerceIn(576, 9000)
                 // Persist non-sensitive params for CONNECT_QUICK reconnect (no credentials)
-                saveConnectionParams(socksPort, excludedPackages, includedPackages,
+                ConnectionParams(socksPort, excludedPackages, includedPackages,
                     vpnMode, ssPrefix, proxyOnly, showNotification, killSwitch, allowIcmp, mtu)
+                    .save(filesDir, ::log)
                 userRequestedDisconnect.set(false)
                 ensureForeground()
                 Thread {
@@ -306,7 +307,7 @@ class XrayVpnService : VpnService() {
             ACTION_CONNECT_QUICK -> {
                 // Load params and set showNotification BEFORE ensureForeground so the
                 // correct notification type (full vs minimal) is shown from the start.
-                val params = loadConnectionParams()
+                val params = ConnectionParams.load(filesDir)
                 if (params != null) showNotification = params.showNotification
                 ensureForeground()
                 val configFile = File(filesDir, "xray_config.json")
@@ -358,7 +359,7 @@ class XrayVpnService : VpnService() {
         }
         // Service restarted by Android after being killed, or started by always-on VPN.
         // Load params and set showNotification BEFORE ensureForeground (same fix as CONNECT_QUICK).
-        val params = loadConnectionParams()
+        val params = ConnectionParams.load(filesDir)
         if (params != null) showNotification = params.showNotification
         ensureForeground()
         // Auto-connect if saved params exist and user didn't explicitly disconnect.
@@ -392,73 +393,6 @@ class XrayVpnService : VpnService() {
         }
         showDisconnectedNotification()
         return START_STICKY
-    }
-
-    // ---- Connection-params persistence ----
-
-    private data class ConnectionParams(
-        val socksPort: Int,
-        val excludedPackages: List<String>,
-        val includedPackages: List<String>,
-        val vpnMode: String,
-        val ssPrefix: String?,
-        val proxyOnly: Boolean,
-        val showNotification: Boolean,
-        val killSwitch: Boolean,
-        val allowIcmp: Boolean,
-        val mtu: Int = 1500,
-    )
-
-    private fun saveConnectionParams(
-        socksPort: Int,
-        excludedPackages: List<String>, includedPackages: List<String>,
-        vpnMode: String, ssPrefix: String?, proxyOnly: Boolean, showNotification: Boolean,
-        killSwitch: Boolean,
-        allowIcmp: Boolean,
-        mtu: Int = 1500,
-    ) {
-        try {
-            val json = org.json.JSONObject().apply {
-                put("socksPort", socksPort)
-                put("excludedPackages", org.json.JSONArray(excludedPackages))
-                put("includedPackages", org.json.JSONArray(includedPackages))
-                put("vpnMode", vpnMode)
-                if (ssPrefix != null) put("ssPrefix", ssPrefix)
-                put("proxyOnly", proxyOnly)
-                put("showNotification", showNotification)
-                put("killSwitch", killSwitch)
-                put("allowIcmp", allowIcmp)
-                put("mtu", mtu)
-            }
-            File(filesDir, "last_connection_meta.json").writeText(json.toString())
-        } catch (e: Exception) {
-            log("warning", "Failed to save connection params: ${e.message}")
-        }
-    }
-
-    private fun loadConnectionParams(): ConnectionParams? {
-        return try {
-            val text = File(filesDir, "last_connection_meta.json").readText()
-            val json = org.json.JSONObject(text)
-            val excluded = json.getJSONArray("excludedPackages")
-                .let { arr -> List(arr.length()) { arr.getString(it) } }
-            val included = json.getJSONArray("includedPackages")
-                .let { arr -> List(arr.length()) { arr.getString(it) } }
-            ConnectionParams(
-                socksPort = json.getInt("socksPort"),
-                excludedPackages = excluded,
-                includedPackages = included,
-                vpnMode = json.optString("vpnMode", "allExcept"),
-                ssPrefix = json.optString("ssPrefix").takeIf { it.isNotEmpty() },
-                proxyOnly = json.optBoolean("proxyOnly", false),
-                showNotification = json.optBoolean("showNotification", true),
-                killSwitch = json.optBoolean("killSwitch", false),
-                allowIcmp = json.optBoolean("allowIcmp", false),
-                mtu = json.optInt("mtu", 1500).coerceIn(576, 9000),
-            )
-        } catch (_: Exception) {
-            null
-        }
     }
 
     private fun extractSocksFromConfig(configJson: String): Pair<String, String> {
@@ -1461,14 +1395,6 @@ class XrayVpnService : VpnService() {
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
 
-    private fun formatSpeed(bps: Long): String {
-        return when {
-            bps >= 1_000_000 -> "%.1f MB/s".format(bps / 1_000_000.0)
-            bps >= 1_000     -> "%.0f KB/s".format(bps / 1_000.0)
-            else             -> "$bps B/s"
-        }
-    }
-
     /** Ensure the service is in foreground. Safe to call multiple times. */
     private fun ensureForeground() {
         val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
@@ -1562,13 +1488,4 @@ class XrayVpnService : VpnService() {
     }
 
 
-    private fun subnetMaskToPrefix(mask: String): Int {
-        val parts = mask.split(".").map { it.toInt() }
-        var prefix = 0
-        for (part in parts) {
-            var bits = part
-            while (bits != 0) { prefix += bits and 1; bits = bits ushr 1 }
-        }
-        return prefix
-    }
 }
