@@ -970,6 +970,15 @@ class XrayVpnService : VpnService() {
 
                 override fun onLost(network: Network) {
                     log("info", "Network lost: $network")
+                    // Force-close all active tun2socks connections immediately on network loss.
+                    // Stale gVisor TCP connections survive across brief network blips and cause
+                    // app-level freezes (Telegram, etc.) because the SOCKS5 heartbeat cannot
+                    // observe per-connection gVisor state. Closing them now forces apps to
+                    // reconnect through a clean path when the network comes back.
+                    if (tunModeActive && isRunning.get()) {
+                        val closed = Teapodcore.forceTunCloseAllConnections()
+                        if (closed > 0) log("debug", "Network lost: force-closed $closed TUN connections")
+                    }
                     // Snapshot BEFORE clearing — needed for smooth-handover case where
                     // onAvailable(LTE) fires before onLost(WiFi): prev=wifi, after=LTE → trigger.
                     val prev = lastUnderlyingNetwork
