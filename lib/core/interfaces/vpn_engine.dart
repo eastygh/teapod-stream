@@ -36,6 +36,7 @@ class VpnEngineOptions {
   final bool sniffingEnabled;
   final int mtu;
   final DnsQueryStrategy dnsQueryStrategy;
+  final bool blockQuic;
 
   const VpnEngineOptions({
     required this.socksPort,
@@ -57,5 +58,6 @@ class VpnEngineOptions {
     this.sniffingEnabled = true,
     this.mtu = 1500,
     this.dnsQueryStrategy = DnsQueryStrategy.ipv4Only,
+    this.blockQuic = false,
   });
 }

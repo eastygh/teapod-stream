@@ -44,11 +44,20 @@ class XrayConfigBuilder {
       'outbounds': [
         _buildOutbound(config),
         {'tag': 'direct', 'protocol': 'freedom'},
-        {'tag': 'dns-out', 'protocol': 'dns'}
+        {'tag': 'dns-out', 'protocol': 'dns'},
+        {'tag': 'block', 'protocol': 'blackhole'},
       ],
       'routing': {
         'domainStrategy': 'IPIfNonMatch',
         'rules': [
+          if (options.blockQuic) ...[
+            {
+              'type': 'field',
+              'port': '443',
+              'network': 'udp',
+              'outboundTag': 'block',
+            }
+          ],
           if (options.dnsMode == DnsMode.proxy) ...[
             // Proxy mode: intercept DNS queries from the user and handle them via xray's DNS module.
             // We only match socks-in to avoid loops when the DNS module sends its own queries.

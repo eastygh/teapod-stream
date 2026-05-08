@@ -392,6 +392,7 @@ class VpnNotifier extends Notifier<VpnState2> {
       sniffingEnabled: settings.sniffingEnabled,
       mtu: settings.mtu,
       dnsQueryStrategy: settings.dnsQueryStrategy,
+      blockQuic: settings.blockQuic,
     );
     state = state.copyWith(
       activeSocksPort: actualSocksPort,

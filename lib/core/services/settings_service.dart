@@ -73,6 +73,7 @@ class AppSettings {
   final bool subAutoRefresh;
   final int subAutoRefreshHours;
   final DnsQueryStrategy dnsQueryStrategy;
+  final bool blockQuic;
 
   const AppSettings({
     this.socksPort = AppConstants.defaultSocksPort,
@@ -106,6 +107,7 @@ class AppSettings {
     this.subAutoRefresh = false,
     this.subAutoRefreshHours = 6,
     this.dnsQueryStrategy = DnsQueryStrategy.ipv4Only,
+    this.blockQuic = false,
   });
 
   AppSettings copyWith({
@@ -140,6 +142,7 @@ class AppSettings {
     bool? subAutoRefresh,
     int? subAutoRefreshHours,
     DnsQueryStrategy? dnsQueryStrategy,
+    bool? blockQuic,
   }) {
     return AppSettings(
       socksPort: socksPort ?? this.socksPort,
@@ -173,6 +176,7 @@ class AppSettings {
       subAutoRefresh: subAutoRefresh ?? this.subAutoRefresh,
       subAutoRefreshHours: subAutoRefreshHours ?? this.subAutoRefreshHours,
       dnsQueryStrategy: dnsQueryStrategy ?? this.dnsQueryStrategy,
+      blockQuic: blockQuic ?? this.blockQuic,
     );
   }
 
@@ -208,6 +212,7 @@ class AppSettings {
     'subAutoRefresh': subAutoRefresh,
     'subAutoRefreshHours': subAutoRefreshHours,
     'dnsQueryStrategy': dnsQueryStrategy.name,
+    'blockQuic': blockQuic,
   };
 
   static AppSettings fromJson(Map<String, dynamic> json) {
@@ -250,6 +255,7 @@ class AppSettings {
       subAutoRefreshHours: json['subAutoRefreshHours'] as int? ?? 6,
       dnsQueryStrategy: DnsQueryStrategy.values.firstWhere(
         (e) => e.name == json['dnsQueryStrategy'], orElse: () => DnsQueryStrategy.ipv4Only),
+      blockQuic: json['blockQuic'] as bool? ?? false,
     );
   }
 
@@ -296,6 +302,7 @@ class SettingsService {
   static const _subAutoRefreshKey = 'sub_auto_refresh';
   static const _subAutoRefreshHoursKey = 'sub_auto_refresh_hours';
   static const _dnsQueryStrategyKey = 'dns_query_strategy';
+  static const _blockQuicKey = 'block_quic';
 
   final _secure = StorageSecureService();
 
@@ -353,6 +360,7 @@ class SettingsService {
         (e) => e.name == prefs.getString(_dnsQueryStrategyKey),
         orElse: () => DnsQueryStrategy.ipv4Only,
       ),
+      blockQuic: prefs.getBool(_blockQuicKey) ?? false,
     );
   }
 
@@ -412,6 +420,7 @@ class SettingsService {
     await prefs.setBool(_subAutoRefreshKey, settings.subAutoRefresh);
     await prefs.setInt(_subAutoRefreshHoursKey, settings.subAutoRefreshHours);
     await prefs.setString(_dnsQueryStrategyKey, settings.dnsQueryStrategy.name);
+    await prefs.setBool(_blockQuicKey, settings.blockQuic);
     // SOCKS credentials go to encrypted storage
     await _secure.writeSocksCredentials(settings.socksUser, settings.socksPassword);
   }

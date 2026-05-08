@@ -541,6 +541,14 @@ class _SettingsBodyState extends State<_SettingsBody> {
             locked: locked,
             onChange: (v) => widget.onUpdate(s.copyWith(allowIcmp: v)),
           ),
+          _RowToggle(
+            t: t,
+            title: 'Блокировать QUIC',
+            hint: 'Блокирует UDP 443, чтобы браузер использовал TCP вместо HTTP/3. Устраняет зависания Google после простоя.',
+            value: s.blockQuic,
+            locked: locked,
+            onChange: (v) => widget.onUpdate(s.copyWith(blockQuic: v)),
+          ),
           if (!s.proxyOnly)
             _InlineField(
               t: t,
