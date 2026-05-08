@@ -1,7 +1,7 @@
 name: teapodstream
 description: "VPN client supporting xray protocol with TUN interface"
 publish_to: 'none'
-version: 1.4.12+10412
+version: 1.4.13+10413
 
 environment:
   sdk: ^3.11.4

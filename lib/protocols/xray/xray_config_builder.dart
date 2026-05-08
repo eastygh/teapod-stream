@@ -81,6 +81,16 @@ class XrayConfigBuilder {
             },
           ],
           ..._buildGeoRules(routing),
+          // In ONLY mode the catch-all routes to direct, so diagnostic hosts that aren't
+          // in the user's rules would bypass the proxy and may be blocked locally.
+          // Force them via proxy so heartbeat and IP-detection always test the tunnel.
+          if (routing.direction == RoutingDirection.onlySelected) ...[
+            {
+              'type': 'field',
+              'domain': ['full:cp.cloudflare.com', 'full:ip-api.com'],
+              'outboundTag': 'proxy',
+            },
+          ],
           {
             'type': 'field',
             'inboundTag': ['socks-in'],
