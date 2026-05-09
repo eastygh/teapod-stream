@@ -384,7 +384,7 @@ class VpnNotifier extends Notifier<VpnState2> {
       allowIcmp: settings.allowIcmp,
       dnsMode: settings.dnsMode,
       dnsServer: settings.dnsServer,
-      vpnMode: settings.vpnMode,
+      vpnMode: settings.splitTunnelingEnabled ? settings.vpnMode : VpnMode.allExcept,
       proxyOnly: settings.proxyOnly,
       showNotification: settings.showNotification,
       killSwitch: settings.killSwitchEnabled,
