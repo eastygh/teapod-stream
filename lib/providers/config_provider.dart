@@ -147,6 +147,7 @@ class ConfigNotifier extends AsyncNotifier<ConfigState> {
       if (tagged.isEmpty) {
         throw Exception('Subscription returned no valid configurations');
       }
+      // Remove old first, then add new — prevents duplicates if interrupted mid-update
       await storage.removeConfigsBatch(oldConfigs.map((c) => c.id).toList());
       newConfigs = tagged.map((c) {
         final key = '${c.address}:${c.port}';
@@ -156,6 +157,7 @@ class ConfigNotifier extends AsyncNotifier<ConfigState> {
             ? c.copyWith(latencyMs: ms, lastPingedAt: pingedAt)
             : c;
       }).toList();
+      await storage.addConfigsBatch(newConfigs);
 
       final updatedSub = Subscription(
         id: subId,
@@ -194,6 +196,7 @@ class ConfigNotifier extends AsyncNotifier<ConfigState> {
         throw Exception('Subscription returned no valid configurations');
       }
       newConfigs = tagged;
+      await storage.addConfigsBatch(newConfigs);
 
       final sub = Subscription(
         id: subId,
@@ -226,7 +229,6 @@ class ConfigNotifier extends AsyncNotifier<ConfigState> {
     final svc = SubscriptionService();
     final result = await svc.fetchSubscription(url, allowSelfSigned: allowSelfSigned, hwid: hwid);
     final tagged = result.configs.map((c) => c.copyWith(subscriptionId: subId)).toList();
-    await storage.addConfigsBatch(tagged);
     return (tagged, result);
   }
 
@@ -384,6 +386,21 @@ class ConfigNotifier extends AsyncNotifier<ConfigState> {
       addedSubscriptions: addedSubscriptions,
       skippedConfigs: remappedConfigs.length - newConfigs.length,
     );
+  }
+
+  Future<void> batchUpdatePingResults(Map<String, int?> latencyByEndpoint, DateTime pingedAt) async {
+    final current = state.maybeWhen(data: (d) => d, orElse: () => null);
+    if (current == null) return;
+    var anyChanged = false;
+    final updated = current.configs.map((c) {
+      final key = '${c.address}:${c.port}';
+      if (!latencyByEndpoint.containsKey(key)) return c;
+      anyChanged = true;
+      return c.copyWith(latencyMs: latencyByEndpoint[key], lastPingedAt: pingedAt);
+    }).toList();
+    if (!anyChanged) return;
+    await storage.saveConfigs(updated);
+    state = AsyncData(current.copyWith(configs: updated));
   }
 
   // ─── Reorder ───

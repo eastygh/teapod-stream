@@ -50,7 +50,7 @@ class XrayEngine implements VpnEngine {
 
   @override
   Future<int?> pingConfig(VpnConfig config) async {
-    if (config.rawXrayConfig != null) return null;
+    if (config.address.isEmpty || config.address == 'managed') return null;
     try {
       final result = await _channel.invokeMethod<int>('ping', {
         'address': config.address,

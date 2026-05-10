@@ -66,6 +66,7 @@ class VpnNotifier extends Notifier<VpnState2> {
   Timer? _disconnectTimeout;
   Timer? _statsPoller;
   Timer? _subRefreshTimer;
+  bool _isPinging = false;
   DateTime? _connectedAt;
 
 
@@ -495,19 +496,19 @@ class VpnNotifier extends Notifier<VpnState2> {
   }
 
   Future<void> pingAllConfigs() async {
+    if (_isPinging) return;
     final configState = ref.read(configProvider).maybeWhen(data: (d) => d, orElse: () => null);
     if (configState == null) return;
-    final now = DateTime.now();
-    final pinged = await Future.wait(configState.configs.map((config) async {
-      final ms = await _engine.pingConfig(config);
-      return config.copyWith(latencyMs: ms, lastPingedAt: now);
-    }));
-    for (final updated in pinged) {
-      await ref.read(configProvider.notifier).updateConfig(updated);
+    _isPinging = true;
+    try {
+      await _pingEndpoints(configState.configs);
+    } finally {
+      _isPinging = false;
     }
   }
 
   Future<void> pingStaleConfigs() async {
+    if (_isPinging) return;
     final configState = ref.read(configProvider).maybeWhen(data: (d) => d, orElse: () => null);
     if (configState == null) return;
     final now = DateTime.now();
@@ -516,13 +517,37 @@ class VpnNotifier extends Notifier<VpnState2> {
       return now.difference(c.lastPingedAt!) > const Duration(hours: 1);
     }).toList();
     if (stale.isEmpty) return;
-    final pinged = await Future.wait(stale.map((config) async {
-      final ms = await _engine.pingConfig(config);
-      return config.copyWith(latencyMs: ms, lastPingedAt: now);
-    }));
-    for (final updated in pinged) {
-      await ref.read(configProvider.notifier).updateConfig(updated);
+    _isPinging = true;
+    try {
+      await _pingEndpoints(stale);
+    } finally {
+      _isPinging = false;
     }
+  }
+
+  Future<void> _pingEndpoints(List<VpnConfig> configs) async {
+    final now = DateTime.now();
+    // Prefer non-raw configs per endpoint so TCP probe works for shared servers
+    final endpoints = <String, VpnConfig>{};
+    for (final c in configs) {
+      if (c.rawXrayConfig == null) {
+        endpoints['${c.address}:${c.port}'] = c;
+      }
+    }
+    for (final c in configs) {
+      if (c.rawXrayConfig != null) {
+        endpoints.putIfAbsent('${c.address}:${c.port}', () => c);
+      }
+    }
+
+    final results = await Future.wait(endpoints.entries.map((e) async {
+      final ms = await _engine.pingConfig(e.value);
+      return MapEntry(e.key, ms);
+    }));
+    final latencyMap = Map.fromEntries(results);
+
+    // Single batch update — one storage write, one state update
+    await ref.read(configProvider.notifier).batchUpdatePingResults(latencyMap, now);
   }
 
   Future<String?> getLogFilePath() => _engine.getLogFilePath();
