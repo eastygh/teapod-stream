@@ -41,6 +41,8 @@ class VpnConfig {
   final String? xhttpMode; // for xhttp transport: "auto", "packet-up", "stream-up", "stream-one"
   final Map<String, dynamic>? xhttpExtra; // raw extra object passed to xhttpSettings
   final Map<String, dynamic>? finalmask; // xray finalmask stream setting (fm param in URL)
+  final String? alpn; // comma-separated ALPN list, e.g. "h3" or "h2,http/1.1"
+  final String? ech; // base64 ECH ConfigList for TLS Encrypted Client Hello
 
   const VpnConfig({
     required this.id,
@@ -77,6 +79,8 @@ class VpnConfig {
     this.xhttpMode,
     this.xhttpExtra,
     this.finalmask,
+    this.alpn,
+    this.ech,
   });
 
   String? validate() {
@@ -136,6 +140,8 @@ class VpnConfig {
       xhttpMode: xhttpMode,
       xhttpExtra: xhttpExtra,
       finalmask: finalmask,
+      alpn: alpn,
+      ech: ech,
     );
   }
 
@@ -174,6 +180,8 @@ class VpnConfig {
         'xhttpMode': xhttpMode,
         'xhttpExtra': xhttpExtra,
         'finalmask': finalmask,
+        'alpn': alpn,
+        'ech': ech,
       };
 
   factory VpnConfig.fromJson(Map<String, dynamic> json) => VpnConfig(
@@ -222,6 +230,8 @@ class VpnConfig {
         xhttpMode: json['xhttpMode'] as String?,
         xhttpExtra: json['xhttpExtra'] as Map<String, dynamic>?,
         finalmask: json['finalmask'] as Map<String, dynamic>?,
+        alpn: json['alpn'] as String?,
+        ech: json['ech'] as String?,
       );
 
   String toJsonString() => jsonEncode(toJson());

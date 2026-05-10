@@ -86,6 +86,8 @@ class VlessParser {
         xhttpMode: params['mode'],
         xhttpExtra: _parseExtra(params['extra']),
         finalmask: _parseExtra(params['fm']),
+        alpn: params['alpn'],
+        ech: params['ech'],
         createdAt: DateTime.now(),
         rawUri: uri,
       );

@@ -368,6 +368,13 @@ class XrayConfigBuilder {
           'allowInsecure': false,
           if (config.fingerprint != null && config.fingerprint!.isNotEmpty)
             'fingerprint': config.fingerprint,
+          if (config.alpn != null && config.alpn!.isNotEmpty)
+            'alpn': config.alpn!.split(',').map((s) => s.trim()).toList(),
+          if (config.ech != null && config.ech!.isNotEmpty)
+            'echSettings': {
+              'enable': true,
+              'config': [config.ech],
+            },
         },
       if (config.transport == VpnTransport.ws)
         'wsSettings': {
