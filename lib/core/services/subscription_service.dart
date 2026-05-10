@@ -136,6 +136,70 @@ class SubscriptionService {
 
     body = body.trim();
     List<String> lines;
+    final configs = <VpnConfig>[];
+
+    // Detect pre-built xray JSON config array (managed subscription format).
+    if (body.startsWith('[') || body.startsWith('{')) {
+      try {
+        final jsonData = jsonDecode(body);
+        final items = jsonData is List ? jsonData : [jsonData];
+        for (final item in items) {
+          if (item is! Map<String, dynamic>) continue;
+          final remarks = item['remarks'] as String? ?? 'Server';
+          final rawJson = jsonEncode(item);
+          String address = '';
+          int port = 0;
+          final outbounds = item['outbounds'] as List<dynamic>? ?? [];
+          for (final outbound in outbounds) {
+            if (outbound is! Map<String, dynamic>) continue;
+            final tag = outbound['tag'] as String? ?? '';
+            if (tag == 'direct' || tag == 'block' || tag.isEmpty) continue;
+            final settings = outbound['settings'] as Map<String, dynamic>?;
+            final vnext = settings?['vnext'] as List<dynamic>?;
+            if (vnext != null && vnext.isNotEmpty) {
+              final srv = vnext.first as Map<String, dynamic>;
+              address = srv['address'] as String? ?? '';
+              port = srv['port'] as int? ?? 0;
+              break;
+            }
+            final servers = settings?['servers'] as List<dynamic>?;
+            if (servers != null && servers.isNotEmpty) {
+              final srv = servers.first as Map<String, dynamic>;
+              address = srv['address'] as String? ?? '';
+              port = srv['port'] as int? ?? 0;
+              break;
+            }
+          }
+          configs.add(VpnConfig(
+            id: 'xray_${DateTime.now().millisecondsSinceEpoch}_${configs.length}',
+            name: remarks,
+            protocol: VpnProtocol.vless,
+            address: address.isEmpty ? 'managed' : address,
+            port: port > 0 ? port : 443,
+            uuid: '',
+            security: VpnSecurity.none,
+            transport: VpnTransport.tcp,
+            createdAt: DateTime.now(),
+            rawXrayConfig: rawJson,
+          ));
+        }
+        if (configs.isNotEmpty) {
+          return SubscriptionFetchResult(
+            configs: configs,
+            profileTitle: meta.profileTitle,
+            expireAt: meta.expireAt,
+            uploadBytes: meta.uploadBytes,
+            downloadBytes: meta.downloadBytes,
+            totalBytes: meta.totalBytes,
+            announce: meta.announce,
+            announceUrl: meta.announceUrl,
+            hwidStatus: meta.hwidStatus,
+          );
+        }
+      } catch (_) {
+        // Not valid JSON — fall through to standard URI parsing.
+      }
+    }
 
     // Try base64 decode first.
     // Many providers wrap base64 output at 76 chars (RFC 2045), so strip all
@@ -151,7 +215,6 @@ class SubscriptionService {
       lines = body.split(RegExp(r'\r?\n')).where((l) => l.trim().isNotEmpty).toList();
     }
 
-    final configs = <VpnConfig>[];
     for (final line in lines) {
       final trimmed = line.trim();
       try {

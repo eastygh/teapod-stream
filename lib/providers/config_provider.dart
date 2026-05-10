@@ -190,6 +190,9 @@ class ConfigNotifier extends AsyncNotifier<ConfigState> {
       // New subscription
       subId = 'sub_${DateTime.now().millisecondsSinceEpoch}';
       final (tagged, fetchResult) = await _fetchAndTagConfigs(url, subId, allowSelfSigned: allowSelfSigned, hwid: hwid);
+      if (tagged.isEmpty) {
+        throw Exception('Subscription returned no valid configurations');
+      }
       newConfigs = tagged;
 
       final sub = Subscription(

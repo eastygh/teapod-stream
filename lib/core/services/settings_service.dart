@@ -295,6 +295,9 @@ class SettingsService {
   static const _routingGeositeEnabledKey = 'routing_geosite_enabled';
   static const _routingGeositeCodesKey = 'routing_geosite_codes';
   static const _routingAdBlockEnabledKey = 'routing_adblock_enabled';
+  static const _routingSitesEnabledKey = 'routing_sites_enabled';
+  static const _routingSitesKey = 'routing_sites';
+  static const _routingRuServicesKey = 'routing_ru_services_enabled';
   static const _updateChannelKey = 'update_channel';
   static const _fontScaleKey = 'font_scale';
   static const _sniffingEnabledKey = 'sniffing_enabled';
@@ -378,6 +381,9 @@ class SettingsService {
       geositeEnabled: prefs.getBool(_routingGeositeEnabledKey) ?? false,
       geositeCodes: prefs.getStringList(_routingGeositeCodesKey) ?? [],
       adBlockEnabled: prefs.getBool(_routingAdBlockEnabledKey) ?? false,
+      sitesEnabled: prefs.getBool(_routingSitesEnabledKey) ?? false,
+      sites: prefs.getStringList(_routingSitesKey) ?? [],
+      ruServicesEnabled: prefs.getBool(_routingRuServicesKey) ?? false,
     );
   }
 
@@ -413,6 +419,9 @@ class SettingsService {
     await prefs.setBool(_routingGeositeEnabledKey, settings.routing.geositeEnabled);
     await prefs.setStringList(_routingGeositeCodesKey, settings.routing.geositeCodes);
     await prefs.setBool(_routingAdBlockEnabledKey, settings.routing.adBlockEnabled);
+    await prefs.setBool(_routingSitesEnabledKey, settings.routing.sitesEnabled);
+    await prefs.setStringList(_routingSitesKey, settings.routing.sites);
+    await prefs.setBool(_routingRuServicesKey, settings.routing.ruServicesEnabled);
     await prefs.setString(_updateChannelKey, settings.updateChannel.name);
     await prefs.setString(_fontScaleKey, settings.fontScale.name);
     await prefs.setBool(_sniffingEnabledKey, settings.sniffingEnabled);

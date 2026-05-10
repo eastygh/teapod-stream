@@ -17,7 +17,14 @@ class XrayEngine implements VpnEngine {
 
   @override
   Future<void> connect(VpnConfig config, VpnEngineOptions options) async {
-    final xrayConfig = XrayConfigBuilder.buildJson(config, options);
+    final String xrayConfig;
+
+    if (config.rawXrayConfig != null) {
+      xrayConfig = XrayConfigBuilder.mergeWithRaw(config.rawXrayConfig!, options);
+    } else {
+      xrayConfig = XrayConfigBuilder.buildJson(config, options);
+    }
+
     await _channel.invokeMethod('connect', {
       'xrayConfig': xrayConfig,
       'socksPort': options.socksPort,
@@ -35,6 +42,7 @@ class XrayEngine implements VpnEngine {
     });
   }
 
+
   @override
   Future<void> disconnect() async {
     await _channel.invokeMethod('disconnect');
@@ -42,6 +50,7 @@ class XrayEngine implements VpnEngine {
 
   @override
   Future<int?> pingConfig(VpnConfig config) async {
+    if (config.rawXrayConfig != null) return null;
     try {
       final result = await _channel.invokeMethod<int>('ping', {
         'address': config.address,

@@ -7,6 +7,32 @@ import '../../core/constants/xray_defaults.dart';
 import '../../core/services/settings_service.dart' show DnsQueryStrategy;
 
 class XrayConfigBuilder {
+  static const _ruServicesDomains = [
+    'domain:2gis.ru', 'domain:2gis.com', 'domain:ads.x5.ru', 'domain:aif.ru',
+    'domain:aeroflot.ru', 'domain:alfabank.ru', 'domain:api.oneme.ru', 'domain:avito.ru',
+    'domain:beeline.ru', 'domain:burgerkingrus.ru', 'domain:dellin.ru', 'domain:drive2.ru',
+    'domain:dzen.ru', 'domain:fd.oneme.ru', 'domain:flypobeda.ru', 'domain:forbes.ru',
+    'domain:gazeta.ru', 'domain:gazprombank.ru', 'domain:gismeteo.ru', 'domain:gosuslugi.ru',
+    'domain:hh.ru', 'domain:i.oneme.ru', 'domain:kontur.ru', 'domain:kontur.host',
+    'domain:kp.ru', 'domain:kuper.ru', 'domain:lenta.ru', 'domain:mail.ru', 'domain:max.ru',
+    'domain:megamarket.ru', 'domain:megamarket.tech', 'domain:megafon.ru',
+    'domain:miniapps.max.ru', 'domain:moex.com', 'domain:motivtelecom.ru', 'domain:ozon.ru',
+    'domain:pervye.ru', 'domain:psbank.ru', 'domain:rambler.ru', 'domain:rambler-co.ru',
+    'domain:rbc.ru', 'domain:reg.ru', 'domain:reviews.2gis.com', 'domain:rg.ru',
+    'domain:ria.ru', 'domain:rustore.ru', 'domain:rutube.ru', 'domain:ruwiki.ru',
+    'domain:rzd.ru', 'domain:sdk-api.apptracer.ru', 'domain:sirena-travel.ru',
+    'domain:sravni.ru', 'domain:st.max.ru', 'domain:t-j.ru', 'domain:t2.ru',
+    'domain:tank-online.com', 'domain:taximaxim.ru', 'domain:tbank-online.com',
+    'domain:tildaapi.com', 'domain:tns-counter.ru', 'domain:tracker-api.vk-analytics.ru',
+    'domain:trvl.yandex.net', 'domain:tutu.ru', 'domain:vk.com', 'domain:vk.ru',
+    'domain:vkvideo.ru', 'domain:vtb.ru', 'domain:x5.ru',
+    'domain:xn--90acagbhgpca7c8c7f.xn--p1ai', 'domain:xn--80ajghhoc2aj1c8b.xn--p1ai',
+    'domain:xn--90aivcdt6dxbc.xn--p1ai', 'domain:xn--b1aew.xn--p1ai',
+    'domain:ya.ru', 'domain:yandex.ru', 'domain:yandex.net', 'domain:yandex.com',
+    'domain:yandexcloud.net', 'domain:yastatic.net',
+    'full:go.yandex', 'full:ru.ruwiki.ru',
+  ];
+
   static Map<String, dynamic> build(VpnConfig config, VpnEngineOptions options) {
     final dnsBlock = _buildDnsBlock(options);
     final routing = options.routing;
@@ -154,6 +180,22 @@ class XrayConfigBuilder {
       });
     }
 
+    if (routing.sitesEnabled && routing.sites.isNotEmpty) {
+      rules.add({
+        'type': 'field',
+        'domain': routing.sites.map((s) => 'domain:$s').toList(),
+        'outboundTag': selectedOut,
+      });
+    }
+
+    if (routing.ruServicesEnabled) {
+      rules.add({
+        'type': 'field',
+        'domain': _ruServicesDomains,
+        'outboundTag': selectedOut,
+      });
+    }
+
     return rules;
   }
 
@@ -162,6 +204,8 @@ class XrayConfigBuilder {
     DnsQueryStrategy.ipv6Only => 'UseIPv6',
     DnsQueryStrategy.auto     => 'UseIP',
   };
+
+  static Map<String, dynamic> buildDnsBlock(VpnEngineOptions options) => _buildDnsBlock(options);
 
   static Map<String, dynamic> _buildDnsBlock(VpnEngineOptions options) {
     final server = options.dnsServer;
@@ -184,7 +228,7 @@ class XrayConfigBuilder {
     if (routing.adBlockEnabled) {
       servers.add({
         'address': 'rcode://success',
-        'domains': [XrayDefaults.adBlockGeosite],
+        'domains': [XrayDefaults.adBlockGeosite, 'geosite:win-spy'],
       });
     }
 
@@ -420,5 +464,97 @@ class XrayConfigBuilder {
     if (RegExp(r'^\d+\.\d+\.\d+\.\d+$').hasMatch(host)) return true;
     if (host.contains(':')) return true; // IPv6
     return false;
+  }
+
+  /// Merge app settings into a pre-built raw xray config from a managed subscription.
+  /// App settings take priority: inbounds, dns, log are replaced; app routing rules
+  /// are prepended (with higher priority than server rules).
+  static String mergeWithRaw(String rawConfig, VpnEngineOptions options) {
+    try {
+      final cfg = jsonDecode(rawConfig) as Map<String, dynamic>;
+
+      // Replace inbounds with app's (port, credentials, sniffing)
+      cfg['inbounds'] = [
+        {
+          'tag': 'socks-in',
+          'protocol': 'socks',
+          'port': options.socksPort,
+          'listen': XrayDefaults.socksListen,
+          'settings': {
+            'auth': options.socksUser.isNotEmpty ? 'password' : 'noauth',
+            if (options.socksUser.isNotEmpty)
+              'accounts': [
+                {'user': options.socksUser, 'pass': options.socksPassword}
+              ],
+            'udp': options.enableUdp,
+          },
+          'sniffing': {
+            'enabled': options.sniffingEnabled,
+            if (options.sniffingEnabled) ...{
+              'destOverride': ['http', 'tls', 'quic'],
+              'routeOnly': true,
+            },
+          },
+        },
+      ];
+
+      // Replace dns with app's (adblock, DNS server, DNS mode)
+      cfg['dns'] = _buildDnsBlock(options);
+
+      // Replace log level
+      cfg['log'] = {'loglevel': options.logLevel.name};
+
+      // Ensure dns-out outbound exists (needed for DNS proxy mode rule)
+      if (options.dnsMode == DnsMode.proxy) {
+        final outbounds = List<dynamic>.from(cfg['outbounds'] as List? ?? []);
+        if (!outbounds.any((o) => (o as Map?)?['tag'] == 'dns-out')) {
+          outbounds.add({'tag': 'dns-out', 'protocol': 'dns'});
+          cfg['outbounds'] = outbounds;
+        }
+      }
+
+      // Build app routing rules to prepend (app has priority over server rules)
+      final appRules = <Map<String, dynamic>>[];
+
+      if (options.blockQuic) {
+        appRules.add({
+          'type': 'field', 'port': '443', 'network': 'udp', 'outboundTag': 'block',
+        });
+      }
+
+      if (options.dnsMode == DnsMode.proxy) {
+        appRules.add({
+          'type': 'field',
+          'inboundTag': ['socks-in'],
+          'port': '53',
+          'network': 'udp,tcp',
+          'outboundTag': 'dns-out',
+        });
+      } else if (options.dnsMode == DnsMode.direct) {
+        appRules.add({
+          'type': 'field', 'port': '53', 'network': 'udp,tcp', 'outboundTag': 'direct',
+        });
+      }
+
+      // Bypass/only rules from app settings — only safe if direction is not global
+      final routing = options.routing;
+      if (routing.isActive) {
+        appRules.addAll(_buildGeoRules(routing));
+      }
+
+      // Prepend app rules to the server's existing rules
+      if (appRules.isNotEmpty) {
+        final serverRouting = cfg['routing'] as Map<String, dynamic>? ?? {};
+        final serverRules = List<dynamic>.from(serverRouting['rules'] as List? ?? []);
+        cfg['routing'] = {
+          ...serverRouting,
+          'rules': [...appRules, ...serverRules],
+        };
+      }
+
+      return jsonEncode(cfg);
+    } catch (_) {
+      return rawConfig;
+    }
   }
 }

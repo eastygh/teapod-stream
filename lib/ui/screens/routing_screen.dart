@@ -88,6 +88,8 @@ class _RoutingBody extends StatelessWidget {
       (routing.geoEnabled ? routing.geoCodes.length : 0) +
       (routing.domainEnabled ? routing.domainZones.length : 0) +
       (routing.geositeEnabled ? routing.geositeCodes.length : 0) +
+      (routing.sitesEnabled ? routing.sites.length : 0) +
+      (routing.ruServicesEnabled ? 1 : 0) +
       (routing.bypassLocal ? 1 : 0) +
       (routing.adBlockEnabled ? 1 : 0);
 
@@ -244,13 +246,31 @@ class _RoutingBody extends StatelessWidget {
                     enabled: routing.geositeEnabled,
                     locked: geositeLocked,
                     hint: !sniffingEnabled ? sniffHint : geoHint,
-                    last: true,
+                    last: false,
                     onToggle: (v) => onUpdate(routing.copyWith(geositeEnabled: v)),
                     chips: routing.geositeCodes,
                     onRemove: geositeLocked ? null : (code) => onUpdate(routing.copyWith(
                         geositeCodes: routing.geositeCodes.where((c) => c != code).toList())),
                     onAdd: geositeLocked ? null : () => _showGeositePicker(context),
                     addLabel: '+ категория',
+                  ),
+
+                  // 0x35 SITES
+                  _SectionHeader(t: t, addr: '0x35', label: 'sites'),
+                  _ToggleWithChips(
+                    t: t,
+                    subLabel: 'sites',
+                    count: routing.sites.length,
+                    enabled: routing.sitesEnabled,
+                    locked: domainLocked,
+                    hint: !sniffingEnabled ? sniffHint : null,
+                    last: true,
+                    onToggle: (v) => onUpdate(routing.copyWith(sitesEnabled: v)),
+                    chips: routing.sites,
+                    onRemove: domainLocked ? null : (site) => onUpdate(routing.copyWith(
+                        sites: routing.sites.where((s) => s != site).toList())),
+                    onAdd: domainLocked ? null : () => _showSitesPicker(context),
+                    addLabel: '+ сайт',
                   ),
                 ],
 
@@ -259,11 +279,19 @@ class _RoutingBody extends StatelessWidget {
                 _RowToggle(
                   t: t,
                   title: 'Блокировка рекламы',
-                  hint: geoHint ?? 'geosite:category-ads-all → block',
+                  hint: geoHint ?? 'geosite:category-ads-all + geosite:win-spy → block',
                   value: routing.adBlockEnabled,
                   locked: locked || geoMissing,
-                  last: true,
                   onChange: (v) => onUpdate(routing.copyWith(adBlockEnabled: v)),
+                ),
+                _RowToggle(
+                  t: t,
+                  title: 'Российские сервисы',
+                  hint: 'Яндекс, VK, Сбер, Ozon, Авито и др. → выбранный outbound',
+                  value: routing.ruServicesEnabled,
+                  locked: locked,
+                  last: true,
+                  onChange: (v) => onUpdate(routing.copyWith(ruServicesEnabled: v)),
                 ),
 
                 // 0x50 GEO.DATA
@@ -456,17 +484,96 @@ class _RoutingBody extends StatelessWidget {
     customCtrl.dispose();
   }
 
+  // ── Sites picker ────────────────────────────────────────────────
+
+  static const _popularSites = [
+    'habr.com', 'apkmirror.com', 'github.com',
+    'ifconfig.me', 'checkip.amazonaws.com', 'myip.ru', 'myip.com', '2ip.ru',
+  ];
+
+  Future<void> _showSitesPicker(BuildContext context) async {
+    final selected    = Set<String>.from(routing.sites);
+    final popularKeys = _popularSites.toSet();
+    final customSites = Set<String>.from(selected.difference(popularKeys));
+    final customCtrl  = TextEditingController();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, ss) {
+          final t = Theme.of(ctx).extension<TeapodTokens>()!;
+          void add() {
+            final site = customCtrl.text.toLowerCase().trim()
+                .replaceAll(RegExp(r'^https?://'), '')
+                .replaceAll(RegExp(r'/.*'), '');
+            if (site.isNotEmpty && !selected.contains(site)) {
+              ss(() { selected.add(site); customSites.add(site); });
+              customCtrl.clear();
+            }
+          }
+          return DraggableScrollableSheet(
+            initialChildSize: 0.7, minChildSize: 0.5, maxChildSize: 0.92,
+            expand: false,
+            builder: (_, sc) => _PickerShell(
+              t: t, title: 'SITES · САЙТЫ',
+              onDone: () {
+                onUpdate(routing.copyWith(sites: selected.toList()));
+                Navigator.pop(ctx);
+              },
+              child: ListView(
+                controller: sc,
+                children: [
+                  for (final site in _popularSites)
+                    _CheckRow(
+                      t: t, title: site, subtitle: 'domain:$site',
+                      value: selected.contains(site),
+                      onChanged: (v) => ss(() { v ? selected.add(site) : selected.remove(site); }),
+                    ),
+                  for (final site in customSites)
+                    _CheckRow(
+                      t: t, title: site, subtitle: 'domain:$site',
+                      value: true,
+                      onChanged: (v) {
+                        if (v == false) ss(() { selected.remove(site); customSites.remove(site); });
+                      },
+                    ),
+                  _CustomInputRow(
+                    t: t, ctrl: customCtrl,
+                    hint: 'Сайт (напр. example.com)',
+                    onAdd: add,
+                    onSubmit: add,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    customCtrl.dispose();
+  }
+
   // ── Geosite picker ──────────────────────────────────────────────
 
   static const _popularGeosite = [
-    ('category-ru', 'Россия (категория)'), ('cn', 'Китай'),
+    ('category-ru', 'Россия (категория)'),
+    ('category-ip-geo-detect', 'Geo-detect сервисы'),
+    ('apple', 'Apple'), ('apple-pki', 'Apple PKI'),
+    ('huawei', 'Huawei'), ('xiaomi', 'Xiaomi'),
+    ('category-android-app-download', 'Android App Download'),
+    ('f-droid', 'F-Droid'),
+    ('yandex', 'Yandex'), ('vk', 'VK'),
+    ('microsoft', 'Microsoft'), ('win-update', 'Windows Update'), ('win-extra', 'Windows Extra'),
+    ('google-play', 'Google Play'), ('steam', 'Steam'),
+    ('cn', 'Китай'),
     ('google', 'Google'), ('youtube', 'YouTube'), ('telegram', 'Telegram'),
     ('twitter', 'Twitter / X'), ('instagram', 'Instagram'), ('facebook', 'Facebook'),
     ('netflix', 'Netflix'), ('disney', 'Disney+'), ('amazon', 'Amazon / AWS'),
     ('cloudflare', 'Cloudflare'), ('github', 'GitHub'),
-    ('openai', 'OpenAI / ChatGPT'), ('apple', 'Apple'),
-    ('microsoft', 'Microsoft'), ('tiktok', 'TikTok'),
-    ('steam', 'Steam'), ('category-games', 'Игры'),
+    ('openai', 'OpenAI / ChatGPT'),
+    ('tiktok', 'TikTok'), ('category-games', 'Игры'),
   ];
 
   Future<void> _showGeositePicker(BuildContext context) async {

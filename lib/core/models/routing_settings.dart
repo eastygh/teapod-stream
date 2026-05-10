@@ -10,6 +10,9 @@ class RoutingSettings {
   final bool geositeEnabled;
   final List<String> geositeCodes;
   final bool adBlockEnabled;
+  final bool sitesEnabled;
+  final List<String> sites;
+  final bool ruServicesEnabled;
 
   const RoutingSettings({
     this.direction = RoutingDirection.global,
@@ -21,6 +24,9 @@ class RoutingSettings {
     this.geositeEnabled = false,
     this.geositeCodes = const [],
     this.adBlockEnabled = false,
+    this.sitesEnabled = false,
+    this.sites = const [],
+    this.ruServicesEnabled = false,
   });
 
   bool get isActive => direction != RoutingDirection.global;
@@ -35,6 +41,9 @@ class RoutingSettings {
     bool? geositeEnabled,
     List<String>? geositeCodes,
     bool? adBlockEnabled,
+    bool? sitesEnabled,
+    List<String>? sites,
+    bool? ruServicesEnabled,
   }) =>
       RoutingSettings(
         direction: direction ?? this.direction,
@@ -46,6 +55,9 @@ class RoutingSettings {
         geositeEnabled: geositeEnabled ?? this.geositeEnabled,
         geositeCodes: geositeCodes ?? this.geositeCodes,
         adBlockEnabled: adBlockEnabled ?? this.adBlockEnabled,
+        sitesEnabled: sitesEnabled ?? this.sitesEnabled,
+        sites: sites ?? this.sites,
+        ruServicesEnabled: ruServicesEnabled ?? this.ruServicesEnabled,
       );
 
   Map<String, dynamic> toJson() => {
@@ -58,6 +70,9 @@ class RoutingSettings {
     'geositeEnabled': geositeEnabled,
     'geositeCodes': geositeCodes,
     'adBlockEnabled': adBlockEnabled,
+    'sitesEnabled': sitesEnabled,
+    'sites': sites,
+    'ruServicesEnabled': ruServicesEnabled,
   };
 
   static RoutingSettings fromJson(Map<String, dynamic> json) => RoutingSettings(
@@ -73,6 +88,9 @@ class RoutingSettings {
     geositeEnabled: json['geositeEnabled'] as bool? ?? false,
     geositeCodes: (json['geositeCodes'] as List<dynamic>?)?.cast<String>() ?? [],
     adBlockEnabled: json['adBlockEnabled'] as bool? ?? false,
+    sitesEnabled: json['sitesEnabled'] as bool? ?? false,
+    sites: (json['sites'] as List<dynamic>?)?.cast<String>() ?? [],
+    ruServicesEnabled: json['ruServicesEnabled'] as bool? ?? false,
   );
 
   String get summary {
@@ -94,6 +112,8 @@ class RoutingSettings {
     if (geositeEnabled && geositeCodes.isNotEmpty) {
       parts.add('geosite:${geositeCodes.length}');
     }
+    if (sitesEnabled && sites.isNotEmpty) parts.add('sites:${sites.length}');
+    if (ruServicesEnabled) parts.add('RU+');
     if (bypassLocal) parts.add('LAN');
     if (adBlockEnabled) parts.add('Ads✗');
     if (direction == RoutingDirection.global) return parts.join(', ');

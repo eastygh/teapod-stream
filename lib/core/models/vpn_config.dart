@@ -43,6 +43,7 @@ class VpnConfig {
   final Map<String, dynamic>? finalmask; // xray finalmask stream setting (fm param in URL)
   final String? alpn; // comma-separated ALPN list, e.g. "h3" or "h2,http/1.1"
   final String? ech; // base64 ECH ConfigList for TLS Encrypted Client Hello
+  final String? rawXrayConfig; // pre-built xray JSON config (from managed subscriptions)
 
   const VpnConfig({
     required this.id,
@@ -81,9 +82,11 @@ class VpnConfig {
     this.finalmask,
     this.alpn,
     this.ech,
+    this.rawXrayConfig,
   });
 
   String? validate() {
+    if (rawXrayConfig != null) return null;
     if (address.isEmpty) return 'Пустой адрес сервера';
     if (port < 1 || port > 65535) return 'Неверный порт: $port';
     if (protocol == VpnProtocol.vless || protocol == VpnProtocol.vmess) {
@@ -142,6 +145,7 @@ class VpnConfig {
       finalmask: finalmask,
       alpn: alpn,
       ech: ech,
+      rawXrayConfig: rawXrayConfig,
     );
   }
 
@@ -182,6 +186,7 @@ class VpnConfig {
         'finalmask': finalmask,
         'alpn': alpn,
         'ech': ech,
+        'rawXrayConfig': rawXrayConfig,
       };
 
   factory VpnConfig.fromJson(Map<String, dynamic> json) => VpnConfig(
@@ -232,6 +237,7 @@ class VpnConfig {
         finalmask: json['finalmask'] as Map<String, dynamic>?,
         alpn: json['alpn'] as String?,
         ech: json['ech'] as String?,
+        rawXrayConfig: json['rawXrayConfig'] as String?,
       );
 
   String toJsonString() => jsonEncode(toJson());
