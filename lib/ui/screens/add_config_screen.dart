@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/services/deeplink_router.dart';
 import '../../core/services/subscription_service.dart';
 import '../../protocols/xray/vless_parser.dart';
 import '../../providers/config_provider.dart';
@@ -235,6 +236,42 @@ class _AddConfigScreenState extends ConsumerState<AddConfigScreen> {
               allowSelfSigned: allowSelfSigned,
             );
         if (mounted) Navigator.pop(context);
+      } else if (parsed.scheme == 'teapod') {
+        final result = DeeplinkRouter.parse(uri);
+        if (result == null || result.connectionsBundle == null) {
+          setState(() => _error = 'Не удалось распознать диплинк');
+          return;
+        }
+        final bundle = result.connectionsBundle!;
+        int addedConfigs = 0;
+        int addedSubscriptions = 0;
+        if (bundle.isCompact) {
+          for (final rawUri in bundle.rawUris) {
+            final config = VlessParser.parseUri(rawUri);
+            if (config != null) {
+              await ref.read(configProvider.notifier).addConfig(config);
+              addedConfigs++;
+            }
+          }
+          for (final subUrl in bundle.subscriptionUrls) {
+            try {
+              await ref.read(configProvider.notifier).addSubscriptionFromUrl(subUrl);
+              addedSubscriptions++;
+            } catch (_) {}
+          }
+        } else {
+          final r = await ref.read(configProvider.notifier).importBundle(bundle);
+          addedConfigs = r.addedConfigs;
+          addedSubscriptions = r.addedSubscriptions;
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Импортировано: $addedConfigs конфигов, $addedSubscriptions подписок'),
+            duration: const Duration(seconds: 2),
+          ));
+          Navigator.pop(context);
+        }
       } else {
         final config = VlessParser.parseUri(uri);
         if (config != null) {

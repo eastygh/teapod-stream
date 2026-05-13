@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/models/connections_bundle.dart';
 import '../../core/models/vpn_config.dart';
 import '../../core/services/config_storage_service.dart';
 import '../../core/services/subscription_service.dart';
@@ -113,6 +114,10 @@ class _ConfigsScreenState extends ConsumerState<ConfigsScreen> {
               ),
               isRefreshing: _isRefreshingAll,
               onSettings: () => _showSettingsSheet(context, t),
+              onExport: configStateAsync.maybeWhen(
+                data: (s) => s.configs.isNotEmpty ? () => _exportAll(s.configs) : null,
+                orElse: () => null,
+              ),
             ),
             Expanded(
               child: configStateAsync.when(
@@ -328,6 +333,17 @@ class _ConfigsScreenState extends ConsumerState<ConfigsScreen> {
     if (vpnState.isConnected || vpnState.isBusy) {
       ref.read(vpnProvider.notifier).reconnectWithNewConfig();
     }
+  }
+
+  Future<void> _exportAll(List<VpnConfig> configs) async {
+    final cs = ref.read(configProvider).maybeWhen(data: (d) => d, orElse: () => null);
+    if (cs == null || cs.configs.isEmpty) return;
+    final bundle = ConnectionsBundle(
+      exportedAt: DateTime.now(),
+      configs: cs.standaloneConfigs,
+      subscriptions: cs.subscriptions,
+    );
+    await Share.share(bundle.toCompactDeeplink(), subject: 'teapod configs');
   }
 
   Future<void> _pingAll(List<VpnConfig> configs) async {
@@ -735,6 +751,7 @@ class _CfgTitlePanel extends StatelessWidget {
   final VoidCallback? onRefreshAll;
   final bool isRefreshing;
   final VoidCallback onSettings;
+  final VoidCallback? onExport;
 
   const _CfgTitlePanel({
     required this.t,
@@ -742,19 +759,22 @@ class _CfgTitlePanel extends StatelessWidget {
     this.onRefreshAll,
     this.isRefreshing = false,
     required this.onSettings,
+    this.onExport,
   });
 
   @override
   Widget build(BuildContext context) {
     return HeroPanel(
       t: t,
-      tagline: 'КОНФИГУРАЦИИ · VPN · XRAY',
+      tagline: 'КОНФИГУРАЦИИ',
       title: 'CONFIGS',
       subtitle: Text('subs · standalone · imported',
           style: AppTheme.mono(size: 11, color: t.textDim, letterSpacing: 0.5)),
       trailing: Row(
         children: [
           _IconBtn(t: t, icon: Icons.tune_rounded, accent: false, onTap: onSettings),
+          const SizedBox(width: 6),
+          _IconBtn(t: t, icon: Icons.ios_share_rounded, accent: false, onTap: onExport),
           const SizedBox(width: 6),
           if (isRefreshing)
             SizedBox(

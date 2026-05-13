@@ -77,16 +77,29 @@ class XrayConfigBuilder {
         'domainStrategy': 'IPIfNonMatch',
         'rules': [
           if (options.blockQuic) ...[
+            // Only block QUIC for user traffic (socks-in), not for xray's internal DNS module connections.
             {
               'type': 'field',
+              'inboundTag': ['socks-in'],
               'port': '443',
               'network': 'udp',
               'outboundTag': 'block',
             }
           ],
           if (options.dnsMode == DnsMode.proxy) ...[
-            // Proxy mode: intercept DNS queries from the user and handle them via xray's DNS module.
-            // We only match socks-in to avoid loops when the DNS module sends its own queries.
+            // DoH/DoT connections from the DNS module go direct (not through VLESS proxy).
+            // xray protects these sockets via VpnService.protect(), so they bypass the TUN
+            // and reach the DNS server without going through the VPN tunnel.
+            // Going through VLESS causes unreliable HTTP/2 — each query opens a new
+            // VLESS connection and responses timeout because Google closes them quickly.
+            // DoH/DoT encrypt DNS independently of VPN, so direct is still private.
+            // UDP DNS continues to go through proxy to preserve VPN-side DNS resolution.
+            {
+              'type': 'field',
+              'inboundTag': ['dns-module'],
+              'outboundTag': options.dnsServer.type == DnsType.udp ? 'proxy' : 'direct',
+            },
+            // Intercept DNS queries from user apps and handle them via xray's DNS module.
             {
               'type': 'field',
               'inboundTag': ['socks-in'],
@@ -241,7 +254,8 @@ class XrayConfigBuilder {
         servers.add({'address': server.address});
         break;
       case DnsType.dot:
-        servers.add({'address': 'tls://${server.address}', 'port': server.port});
+        // Use domain as TLS address (SNI) when available; fall back to IP.
+        servers.add({'address': 'tls://${server.domain ?? server.address}', 'port': server.port});
         break;
     }
 
@@ -264,6 +278,7 @@ class XrayConfigBuilder {
     }
 
     return {
+      'tag': 'dns-module',
       'hosts': hosts,
       'servers': servers,
       'queryStrategy': strategy,
@@ -518,11 +533,16 @@ class XrayConfigBuilder {
 
       if (options.blockQuic) {
         appRules.add({
-          'type': 'field', 'port': '443', 'network': 'udp', 'outboundTag': 'block',
+          'type': 'field', 'inboundTag': ['socks-in'], 'port': '443', 'network': 'udp', 'outboundTag': 'block',
         });
       }
 
       if (options.dnsMode == DnsMode.proxy) {
+        appRules.add({
+          'type': 'field',
+          'inboundTag': ['dns-module'],
+          'outboundTag': options.dnsServer.type == DnsType.udp ? 'proxy' : 'direct',
+        });
         appRules.add({
           'type': 'field',
           'inboundTag': ['socks-in'],
